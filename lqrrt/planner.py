@@ -107,9 +107,9 @@ class Planner:
 		It can be a scalar from 0 (none of the time) to 1 (all of the time)
 		or a list of scalars corresponding to each state dimension.
 
-		Alternatively, you can give a function xrand_gen which takes the current
-		successful path (self.x_seq, None if no path found yet) and outputs
-		the random sample state. (Giving this will disregard sampling_bias).
+		Alternatively, you can give a function xrand_gen which takes the
+		current planner instance (self) and outputs the random sample state.
+		(Giving this will disregard sampling_bias). Python has no rules.
 
 		If finish_on_goal is set to True, once the plan makes it to the goal
 		region (goal plus buffer), it will attempt to steer one more path
@@ -155,7 +155,7 @@ class Planner:
 
 			# The standard xrand_gen is centered at goal, offset by search_buffer mean,
 			# and expanded to a hyperbox of size sampling_spans
-			def xrand_gen(x_seq):
+			def xrand_gen(planner):
 				xrand = self.goal + sampling_spans*(np.random.sample(self.nstates)-0.5) + self.constraints.search_buffer_offsets
 				for i, choice in enumerate(np.greater(sampling_bias, np.random.sample())): #<<< should make this more pythonic
 					if choice:
@@ -173,7 +173,7 @@ class Planner:
 		while True:
 
 			# Random sample state
-			xrand = xrand_gen(np.array(self.x_seq))
+			xrand = xrand_gen(self)
 
 			# The "nearest" node to xrand has the least cost-to-go of all nodes
 			nearestID = np.argmin(self._costs_to_go(xrand))
