@@ -65,7 +65,7 @@ def dynamics(x, u, dt):
 		xnext[3] = 0
 
 	# Impose not being able to turn in place...
-	xnext[4] = np.clip(np.abs(xnext[3]/vel_max[0]), 0, 1) * xnext[4]
+	# xnext[4] = np.clip(np.abs(xnext[3]/vel_max[0]), 0, 1) * xnext[4]
 
 	return xnext
 
@@ -88,8 +88,8 @@ vps = vps.T
 ################################################# CONTROL POLICY
 
 # Body-frame gains
-kp = np.diag([120, 300])
-kd = np.diag([120, 300])
+kp = np.diag([120, 600])
+kd = np.diag([120, 600])
 
 def lqr(x):
 	"""
@@ -103,7 +103,7 @@ def lqr(x):
 				  ])
 
 	# Policy
-	S = np.diag([1, 1, 0, 0.1, 0.001])
+	S = np.diag([1, 1, 0.1, 0.01, 0.001])
 	K = np.hstack((kp.dot(w2b), kd))
 
 	return (S, K)
@@ -168,18 +168,37 @@ def is_feasible(x, u):
 	verts = np.vstack((R.dot(vps).T, x[:2]))
 	# Check for collisions over all obstacles
 	for ob in obs:
-		if np.any(npl.norm(verts - ob[:2], axis=1) <= ob[2]):
+		if np.any(npl.norm(verts - ob[:2], axis=1) <= 2*ob[2]):
 			return False
 	return True
 
 ################################################# HEURISTICS
 
-search_buffer = [(0, 0), (0, 0), (-np.pi, np.pi), (0.5, 1.1), (-0.15, 0.15)]
-sampling_bias = [0.5, 0.5, 0, 0, 0]
+search_buffer = [(0, 0), (0, 0), (-np.pi, np.pi), (1, 1.1), (-0.2, 0.2)]
+sampling_bias = [0.3, 0.3, 0, 0, 0]
 
 ####
 
-xrand_gen = None #<<< point to goal
+def xrand_gen(planner):
+	"""
+	Returns a random sample state, given access
+	to the entire planner instance. Biases heading
+	towards looking at the goal.
+
+	"""
+	# Standard sample
+	sampling_spans = 2*np.abs(planner.goal - x) + planner.constraints.search_buffer_spans
+	xrand = planner.goal + sampling_spans*(np.random.sample(planner.nstates)-0.5) + planner.constraints.search_buffer_offsets
+	for i, choice in enumerate(np.greater(sampling_bias, np.random.sample())):
+		if choice:
+			xrand[i] = planner.goal[i]
+	# Angle to the goal from closest point on tree
+	closest = planner.tree.state[np.argmin(planner._costs_to_go(planner.goal))]
+	v_to_goal = goal - closest
+	hgoal = np.arctan2(v_to_goal[1], v_to_goal[0])
+	# Angle bias
+	xrand[2] = hgoal + np.deg2rad(30)*np.random.randn()
+	return xrand
 
 ################################################# INSTANTIATIONS
 
@@ -188,8 +207,8 @@ constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
 								is_feasible=is_feasible)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
-						horizon=5, dt=0.1, error_tol=error_tol, erf=np.subtract,
-						min_time=2, max_time=3, max_nodes=1E5,
+						horizon=10, dt=0.1, error_tol=error_tol, erf=np.subtract,
+						min_time=3, max_time=4, max_nodes=1E5,
 						goal0=goal)
 
 ################################################# SIMULATION PART 1
@@ -425,7 +444,7 @@ graphic_robot_2 = ax2.add_patch(plt.Circle((x_history[0, 0], x_history[0, 1]), r
 graphic_robot_3 = ax2.add_patch(plt.Circle(((x_history[0, 0]-td*np.cos(x_history[0, 2]), x_history[0, 1]-td*np.sin(x_history[0, 2]))), radius=radius, fc='k'))
 
 llen = boat_length/2
-graphic_goal = ax2.add_patch(plt.Circle((goal_history[0, 0], goal_history[0, 1]), radius=npl.norm([goal_buffer[0]/2, goal_buffer[1]/2]), color='g', alpha=0.1))
+graphic_goal = ax2.add_patch(plt.Circle((goal_history[0, 0], goal_history[0, 1]), radius=npl.norm([goal_buffer[0], goal_buffer[1]]), color='g', alpha=0.1))
 graphic_goal_heading = ax2.plot([goal_history[0, 0] - 0.5*llen*np.cos(goal_history[0, 2]), goal_history[0, 0] + 0.5*llen*np.cos(goal_history[0, 2])],
 								[goal_history[0, 1] - 0.5*llen*np.sin(goal_history[0, 2]), goal_history[0, 1] + 0.5*llen*np.sin(goal_history[0, 2])], color='g', linewidth=5)
 
