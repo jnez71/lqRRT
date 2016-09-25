@@ -1,5 +1,5 @@
 """
-Demo of using the lqrrt planner. Nonholonomic boats! (Cars? Kinda... glidey cars)
+Demo of using the lqrrt planner for nonholonomic boats. (Cars? Kinda... glidey cars)
 
 State:   [x, y, h, vx, vh]  (m, m, rad, m/s, rad/s)
 Effort:  [ux, uh]           (N, N*m)
@@ -90,9 +90,9 @@ vps = vps.T
 kp = np.diag([120, 600])
 kd = np.diag([120, 600])
 
-def lqr(x):
+def lqr(x, u):
 	"""
-	Returns cost-to-go matrix S and policy matrix K given state x.
+	Returns cost-to-go matrix S and policy matrix K given local state x and effort u.
 
 	"""
 	# First and third rows of R.T
@@ -115,7 +115,7 @@ def erf(xgoal, x):
 	e = xgoal - x
 	c = np.cos(x[2])
 	s = np.sin(x[2])
-	cg = np.cos(x[2])
+	cg = np.cos(xgoal[2])
 	sg = np.sin(xgoal[2])
 	e[2] = np.arctan2(sg*c - cg*s, cg*c + sg*s)
 	return e
@@ -280,9 +280,9 @@ def dynamics(x, u, dt):
 kp = 5*np.diag([120, 120, 600])
 kd = 5*np.diag([120, 0, 50])
 
-def lqr(x):
+def lqr(x, u):
 	"""
-	Returns cost-to-go matrix S and policy matrix K given state x.
+	Returns cost-to-go matrix S and policy matrix K given local state x and effort u.
 
 	"""
 	R = np.array([
@@ -320,7 +320,7 @@ for i, t in enumerate(t_arr):
 	uref = [uplan[0], 0, uplan[1]]
 
 	# Controllers decision
-	u = lqr(x)[1].dot(erf(xref, np.copy(x)))
+	u = lqr(x, uref)[1].dot(erf(xref, np.copy(x)))
 
 	# Record this instant
 	x_history[i, :] = x
@@ -400,7 +400,7 @@ for ID in xrange(planner.tree.size):
 		ax1.plot((x_seq[:, dx]), (x_seq[:, dy]), color='0.75', zorder=1)
 ax1.scatter(planner.tree.state[0, dx], planner.tree.state[0, dy], color='b', s=48)
 ax1.scatter(planner.tree.state[planner.node_seq[-1], dx], planner.tree.state[planner.node_seq[-1], dy], color='r', s=48)
-ax1.scatter(goal[0], goal[1], color='g', s=48)
+ax1.scatter(goal[dx], goal[dy], color='g', s=48)
 for ob in obs:
 	ax1.add_patch(plt.Circle((ob[0], ob[1]), radius=ob[2], fc='r'))
 

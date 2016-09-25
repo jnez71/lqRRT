@@ -31,7 +31,7 @@ class Planner:
 	lqr: Function that returns the local LQR cost-to-go matrix S
 		 and policy matrix K as a tuple of arrays (S, K) where S
 		 solves the local Riccati equation and K is the associated
-		 feedback gain matrix. That is, (S, K) = lqr(x).
+		 feedback gain matrix. That is, (S, K) = lqr(x, u).
 
 	constraints: Instance of the Constraints class that defines
 				 feasibility of states & efforts, search space, etc...
@@ -129,7 +129,7 @@ class Planner:
 
 		# Reset the tree if told to (or if no tree exists yet)
 		if reset_tree or self.tree is None:
-			self.tree = Tree(x0, self.lqr(x0))
+			self.tree = Tree(x0, self.lqr(x0, np.zeros(self.ncontrols)))
 			self.x_seq = None
 			self.u_seq = None
 			self.t_seq = None
@@ -186,7 +186,7 @@ class Planner:
 
 				# Add the new node to the tree
 				xnew = np.copy(xnew_seq[-1])
-				self.tree.add_node(nearestID, xnew, self.lqr(xnew), xnew_seq, unew_seq)
+				self.tree.add_node(nearestID, xnew, self.lqr(xnew, np.copy(unew_seq[-1])), xnew_seq, unew_seq)
 
 				# Check if the newest node reached the goal region
 				if self._in_goal(xnew):
@@ -254,7 +254,7 @@ class Planner:
 		found by LQR about x, not v.
 
 		"""
-		S = self.lqr(x)[0]
+		S = self.lqr(x, np.zeros(self.ncontrols))[0]
 		diffs = self.tree.state - x
 		return np.sum(np.tensordot(diffs, S, axes=1) * diffs, axis=1)
 
@@ -305,13 +305,13 @@ class Planner:
 				break
 
 			# Get next control policy
-			K = self.lqr(x)[1]
+			K = self.lqr(x, u)[1]
 
 			# Record
 			x_seq.append(x)
 			u_seq.append(u)
 
-			# Error based finish criteria #<<< get rid of slowdowns
+			# Error based finish criteria #<<< get rid of random slow convergences
 			if np.all(np.less_equal(np.abs(e), self.error_tol)):
 				break
 
