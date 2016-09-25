@@ -43,8 +43,7 @@ def dynamics(x, u, dt):
 	"""
 	Returns next state given last state x, wrench u, and timestep dt.
 	These dynamics are constrained such that the velocity vector
-	must be tangent to the heading (like a car), but we can rotate
-	regardless of our velocity (like a boat).
+	must be tangent to the heading (like a car).
 
 	"""
 	# Velocity in world frame
@@ -65,7 +64,7 @@ def dynamics(x, u, dt):
 		xnext[3] = 0
 
 	# Impose not being able to turn in place...
-	# xnext[4] = np.clip(np.abs(xnext[3]/vel_max[0]), 0, 1) * xnext[4]
+	xnext[4] = np.clip(np.abs(xnext[3]/vel_max[0]), 0, 1) * xnext[4]
 
 	return xnext
 
@@ -194,7 +193,7 @@ def xrand_gen(planner):
 			xrand[i] = planner.goal[i]
 	# Angle to the goal from closest point on tree
 	closest = planner.tree.state[np.argmin(planner._costs_to_go(planner.goal))]
-	v_to_goal = goal - closest
+	v_to_goal = goal[:2] - closest[:2]
 	hgoal = np.arctan2(v_to_goal[1], v_to_goal[0])
 	# Angle bias
 	xrand[2] = hgoal + np.deg2rad(30)*np.random.randn()
