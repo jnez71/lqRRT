@@ -62,6 +62,10 @@ def dynamics(x, u, dt):
 		else:
 			D[i] = D_neg[i]
 
+	# # PD controller trying to look at target
+	# line_of_sight = [30, 40] - x[:2]
+	# u[2] = u[2] + 2500*(np.arctan2(line_of_sight[1], line_of_sight[0]) - x[2])
+
 	# Actuator saturation
 	for i, mag in enumerate(np.abs(u)):
 		if mag > u_max[i]:
@@ -72,6 +76,7 @@ def dynamics(x, u, dt):
 
 	# First-order integrate
 	return x + xdot*dt
+
 
 # Vehicle dimensions and resolution
 boat_length = 6  # m
@@ -92,8 +97,8 @@ vps = vps.T
 ################################################# CONTROL POLICY
 
 # Body-frame gains
-kp = np.diag([120, 120, 300])
-kd = np.diag([120, 120, 200])
+kp = np.diag([120, 120, 350])
+kd = np.diag([120, 120, 150])
 
 def lqr(x):
 	"""
@@ -106,7 +111,7 @@ def lqr(x):
 				  [           0,             0, 1]
 				])
 
-	S = np.diag([1, 1, 0, 0.05, 0.05, 0])
+	S = np.diag([1, 1, 0, 0, 0, 0])
 	K = np.hstack((kp.dot(R.T), kd))
 
 	return (S, K)
@@ -128,7 +133,7 @@ def erf(xgoal, x):
 ################################################# OBJECTIVES AND CONSTRAINTS
 
 # Initial condition and goal
-x = [0, 0, np.deg2rad(0), 0, 0, 0]
+x = np.array([0, 0, np.deg2rad(0), 0, 0, 0])
 goal = [40, 40, np.deg2rad(90), 0, 0, 0]
 
 # Buffers
@@ -182,8 +187,8 @@ def is_feasible(x, u):
 
 ################################################# HEURISTICS
 
-search_buffer = [(0, 0), (0, 0), (-np.pi, np.pi), (0.5, 1.1), (-0.5, 0.5), (-0.2, 0.2)]
-sampling_bias = [0.7, 0.7, 0.3, 0.3, 0.3, 0.3]
+search_buffer = [(0, 10), (0, 0), (-np.pi, np.pi), (0.5, 1.1), (-1, 1), (-0.2, 0.2)]
+sampling_bias = [0.7, 0.7, 0, 0, 0, 0]
 xrand_gen = None
 
 ################################################# INSTANTIATIONS
@@ -194,7 +199,7 @@ constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
 						horizon=10, dt=0.1, error_tol=error_tol, erf=erf,
-						min_time=1, max_time=2, max_nodes=1E5,
+						min_time=4, max_time=5, max_nodes=1E5,
 						goal0=goal)
 
 ################################################# SIMULATION
