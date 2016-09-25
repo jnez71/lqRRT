@@ -277,8 +277,8 @@ def dynamics(x, u, dt):
 	return x + xdot*dt
 
 # Body-frame gains
-kp = np.diag([120, 120, 300])
-kd = np.diag([120, 120, 200])
+kp = 5*np.diag([120, 120, 600])
+kd = 5*np.diag([120, 0, 50])
 
 def lqr(x):
 	"""
@@ -320,7 +320,7 @@ for i, t in enumerate(t_arr):
 	uref = [uplan[0], 0, uplan[1]]
 
 	# Controllers decision
-	u = lqr(x)[1].dot(erf(xref, np.copy(x))) + uref
+	u = lqr(x)[1].dot(erf(xref, np.copy(x)))
 
 	# Record this instant
 	x_history[i, :] = x

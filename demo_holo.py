@@ -137,8 +137,8 @@ x = np.array([0, 0, np.deg2rad(0), 0, 0, 0])
 goal = [40, 40, np.deg2rad(90), 0, 0, 0]
 
 # Buffers
-goal_buffer = [6, 6, np.deg2rad(45), 5, 5, 2*np.pi]
-error_tol = [0.2, 0.2, np.deg2rad(1), 0.05, 0.05, 0.05]
+goal_buffer = [6, 6, np.inf, 5, 5, 2*np.pi]
+error_tol = [0.2, 0.2, np.deg2rad(10), 0.05, 0.05, 0.05]
 
 ####
 
@@ -187,7 +187,7 @@ def is_feasible(x, u):
 
 ################################################# HEURISTICS
 
-search_buffer = [(0, 10), (0, 0), (-np.pi, np.pi), (0.5, 1.1), (-1, 1), (-0.2, 0.2)]
+search_buffer = [(5, 0), (0, 0), (-np.pi, np.pi), (0.5, 1.1), (-1, 1), (-0.2, 0.2)]
 sampling_bias = [0.7, 0.7, 0, 0, 0, 0]
 xrand_gen = None
 
