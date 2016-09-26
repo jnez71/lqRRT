@@ -1,8 +1,12 @@
 """
-Demo of using the lqrrt planner for nonholonomic boats. (Cars? Kinda... glidey cars)
+Demo of using the lqrrt planner for boats.
+Criteria is to get to some goal without crashing and
+while maintaining a nice, smooth, car-like path. Also,
+we account for the boat's actual shape so it can squeeze
+through tight spaces depending on its heading.
 
-State:   [x, y, h, vx, vh]  (m, m, rad, m/s, rad/s)
-Effort:  [ux, uh]           (N, N*m)
+State:   [x, y, h, vx, vy, vh]  (m, m, rad, m/s, m/s, rad/s)
+Effort:  [ux, uy, uh]           (N, N, N*m)
 
 Pose states are world-frame.
 Twist states and wrench are body-frame.
@@ -21,225 +25,22 @@ import lqrrt
 # Experimentally determined mass and inertia
 m = 500  # kg
 I = 500  # kg/m^2
-invM = np.array([1/m, 1/I])
-
-# Experimentally determined top speeds of the boat, axis aligned
-vel_max = [1.1, 0.2]  # (m/s, rad/s), body-frame forward
-
-# Conservatively estimated maximum wrench
-thrust_max = 220  # N
-thrust_lever = 2.15  # m
-u_max = np.array([2*np.sqrt(2)*thrust_max, 4*thrust_lever*thrust_max])  # (N, N*m)
-
-# Effective linear drag coefficients given wrench and speed limits
-D = np.abs(u_max / vel_max)
-
-################################################# DYNAMICS
-
-nstates = 5
-ncontrols = 2
-
-def dynamics(x, u, dt):
-	"""
-	Returns next state given last state x, wrench u, and timestep dt.
-	These dynamics are constrained such that the velocity vector
-	must be tangent to the heading (like a car).
-
-	"""
-	# Velocity in world frame
-	vwx = np.cos(x[2]) * x[3]
-	vwy = np.sin(x[2]) * x[3]
-
-	# Actuator saturation
-	u = np.clip(u, [-u_max[0]/10, -u_max[1]], u_max)
-
-	# M*vdot + D*v = u  and  pdot = R*v
-	xdot = np.concatenate(([vwx, vwy, x[4]], invM*(u - D*x[3:])))
-
-	# First order integrate
-	xnext = x + xdot*dt
-
-	# Impose that we can't drive backward (this is a very hard constraint...)
-	if xnext[3] < 0:
-		xnext[3] = 0
-
-	# Impose not being able to turn in place...
-	xnext[4] = np.clip(np.abs(xnext[3]/vel_max[0]), 0, 1) * xnext[4]
-
-	return xnext
-
-# Vehicle dimensions and resolution
-boat_length = 6  # m
-boat_width = 3  # m
-boat_buffer = 2
-vps_spacing = 1#0.3  # m
-
-# Vehicle points
-vps_grid_x, vps_grid_y = np.mgrid[slice(-(boat_length+boat_buffer)/2, (boat_length+boat_buffer)/2+vps_spacing, vps_spacing),
-								  slice(-(boat_width+boat_buffer)/2, (boat_width+boat_buffer)/2+vps_spacing, vps_spacing)]
-vps_grid_x = vps_grid_x.reshape(vps_grid_x.size)
-vps_grid_y = vps_grid_y.reshape(vps_grid_y.size)
-vps = np.zeros((vps_grid_x.size, 2))
-for i in range(len(vps)):
-	vps[i] = [vps_grid_x[i], vps_grid_y[i]]
-vps = vps.T
-
-################################################# CONTROL POLICY
-
-# Body-frame gains
-kp = np.diag([120, 600])
-kd = np.diag([120, 600])
-
-def lqr(x, u):
-	"""
-	Returns cost-to-go matrix S and policy matrix K given local state x and effort u.
-
-	"""
-	# First and third rows of R.T
-	w2b = np.array([
-					[np.cos(x[2]), np.sin(x[2]), 0],
-					[           0,            0, 1]
-				  ])
-
-	# Policy
-	S = np.diag([1, 1, 0.1, 0.01, 0.001])
-	K = np.hstack((kp.dot(w2b), kd))
-
-	return (S, K)
-
-def erf(xgoal, x):
-	"""
-	Returns error e given two states xgoal and x.
-
-	"""
-	e = xgoal - x
-	c = np.cos(x[2])
-	s = np.sin(x[2])
-	cg = np.cos(xgoal[2])
-	sg = np.sin(xgoal[2])
-	e[2] = np.arctan2(sg*c - cg*s, cg*c + sg*s)
-	return e
-
-################################################# OBJECTIVES AND CONSTRAINTS
-
-# Initial condition and goal
-x = [0, 0, np.deg2rad(0), 0, 0]
-goal = [40, 40, np.deg2rad(90), 0, 0]
-
-# Buffers
-goal_buffer = [8, 8, np.inf, vel_max[0], vel_max[1]]
-error_tol = [5, 5, np.inf, vel_max[0], vel_max[1]]
-
-####
-
-# # No obstacles (one really far away)
-# obs = np.array([[-2000, -2000, 0]])
-
-# # Obstacles [x, y, radius]
-# obs = np.array([[20, 20, 5],
-# 				[10, 30, 2],
-# 				[40, 10, 3]
-# 			  ])
-
-# Noised grid of obstacles
-obs_spacing = 12  # m
-obs_range = (5, 60)
-obs_grid_x, obs_grid_y = np.mgrid[slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing),
-								  slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing)]
-obs_grid_x = obs_grid_x.reshape(obs_grid_x.size)
-obs_grid_y = obs_grid_y.reshape(obs_grid_y.size)
-obs = [-9999*np.ones(3)] * obs_grid_x.size
-for i in range(len(obs)):
-	p = np.round([obs_grid_x[i], obs_grid_y[i]] + 3*(np.random.rand(2)-0.5), 2)
-	if npl.norm(p - goal[:2]) > 2*boat_length and npl.norm(np.array(p - x[:2])) > 2*boat_length:
-		obs[i] = np.concatenate((p, [1]))
-
-####
-
-# Hard constraints
-def is_feasible(x, u):
-	# Body to world
-	R = np.array([
-				  [np.cos(x[2]), -np.sin(x[2])],
-				  [np.sin(x[2]),  np.cos(x[2])],
-				])
-	# Boat vertices in world frame
-	verts = np.vstack((R.dot(vps).T, x[:2]))
-	# Check for collisions over all obstacles
-	for ob in obs:
-		if np.any(npl.norm(verts - ob[:2], axis=1) <= 2*ob[2]):
-			return False
-	return True
-
-################################################# HEURISTICS
-
-search_buffer = [(0, 0), (0, 0), (-np.pi, np.pi), (1, 1.1), (-0.2, 0.2)]
-sampling_bias = [0.3, 0.3, 0, 0, 0]
-
-####
-
-def xrand_gen(planner):
-	"""
-	Returns a random sample state, given access
-	to the entire planner instance. Biases heading
-	towards looking at the goal.
-
-	"""
-	# Standard sample
-	sampling_spans = 2*np.abs(planner.goal - x) + planner.constraints.search_buffer_spans
-	xrand = planner.goal + sampling_spans*(np.random.sample(planner.nstates)-0.5) + planner.constraints.search_buffer_offsets
-	for i, choice in enumerate(np.greater(sampling_bias, np.random.sample())):
-		if choice:
-			xrand[i] = planner.goal[i]
-	# Angle to the goal from closest point on tree
-	closest = planner.tree.state[np.argmin(planner._costs_to_go(planner.goal))]
-	v_to_goal = goal[:2] - closest[:2]
-	hgoal = np.arctan2(v_to_goal[1], v_to_goal[0])
-	# Angle bias
-	xrand[2] = hgoal + np.deg2rad(30)*np.random.randn()
-	return xrand
-
-################################################# INSTANTIATIONS
-
-constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
-								goal_buffer=goal_buffer, search_buffer=search_buffer,
-								is_feasible=is_feasible)
-
-planner = lqrrt.Planner(dynamics, lqr, constraints,
-						horizon=10, dt=0.1, error_tol=error_tol, erf=np.subtract,
-						min_time=3, max_time=4, max_nodes=1E5,
-						goal0=goal)
-
-################################################# SIMULATION PART 1
-
-# Plan a path
-planner.update_plan(x, sampling_bias=sampling_bias, xrand_gen=xrand_gen, finish_on_goal=False)
-
-# Prepare "real" domain
-dt = 0.03  # s
-T = planner.T  # s
-t_arr = np.arange(0, T, dt)
-framerate = 10
-
-################################################# REVEAL TRUE DYNAMICS
-
-# Experimentally determined mass and inertia
-m = 500  # kg
-I = 500  # kg/m^2
 invM = np.array([1/m, 1/m, 1/I])
 
 # Experimentally determined top speeds of the boat
-vel_pos = [1.1, 0.45, 0.2]  # (m/s, m/s, rad/s), body-frame forward
-vel_neg = [-0.68, -0.45, -0.2]  # (m/s, m/s, rad/s), body-frame backward
+velmax_pos = [1.1, 0.45, 0.2]  # (m/s, m/s, rad/s), body-frame forward
+velmax_neg = [0.68, 0.45, 0.2]  # (m/s, m/s, rad/s), body-frame backward
 
-# Conservatively estimated maximum wrench
+# Maximum wrench, with severly degraded body y thrust
 thrust_max = 220  # N
 thrust_lever = 2.15  # m
-u_max = np.array([2*np.sqrt(2)*thrust_max, 2*np.sqrt(2)*thrust_max, 4*thrust_lever*thrust_max])  # (N, N, N*m)
+u_max = np.array([2*np.sqrt(2)*thrust_max, 0.2*np.sqrt(2)*thrust_max, 4*thrust_lever*thrust_max])  # (N, N, N*m)
 
 # Effective linear drag coefficients given wrench and speed limits
-D_pos = np.abs(u_max / vel_pos)
-D_neg = np.abs(u_max / vel_neg)
+D_pos = np.abs(u_max / velmax_pos)
+D_neg = np.abs(u_max / velmax_neg)
+
+################################################# DYNAMICS
 
 nstates = 6
 ncontrols = 3
@@ -247,7 +48,8 @@ ncontrols = 3
 def dynamics(x, u, dt):
 	"""
 	Returns next state given last state x, wrench u, and timestep dt.
-	Simple holonomic boat-like dynamics.
+	Simple holonomic boat-like dynamics, with some "force of nature"
+	keeping the boat looking along its velocity line.
 
 	"""
 	# Rotation matrix (orientation, converts body to world)
@@ -265,6 +67,15 @@ def dynamics(x, u, dt):
 		else:
 			D[i] = D_neg[i]
 
+	# Heading controller trying to keep us car-like
+	vw = R[:2, :2].dot(x[3:5])
+	ang = np.arctan2(vw[1], vw[0])
+	c = np.cos(x[2])
+	s = np.sin(x[2])
+	cg = np.cos(ang)
+	sg = np.sin(ang)
+	u[2] = u[2] + 5000*np.arctan2(sg*c - cg*s, cg*c + sg*s)
+
 	# Actuator saturation
 	for i, mag in enumerate(np.abs(u)):
 		if mag > u_max[i]:
@@ -274,11 +85,44 @@ def dynamics(x, u, dt):
 	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
 
 	# First-order integrate
-	return x + xdot*dt
+	xnext = x + xdot*dt
+
+	# Impose not turning in place
+	if x[3] > 0:
+		xnext[5] = np.clip(np.abs(xnext[3]/velmax_pos[0]), 0, 1) * xnext[5]
+	elif x[3] < 0:
+		xnext[5] = np.clip(np.abs(xnext[3]/velmax_neg[0]), 0, 1) * xnext[5]
+
+	# Impose not driving backwards
+	if xnext[3] < 0:
+		xnext[3] = 0
+
+	return xnext
+
+################################################# VEHICLE DIMENSIONS
+
+# Boat shape and resolution
+boat_length = 6  # m
+boat_width = 3  # m
+boat_buffer = 2  # m
+vps_spacing = 0.5  # m
+
+# Grid of points defining boat
+vps_grid_x, vps_grid_y = np.mgrid[slice(-(boat_length+boat_buffer)/2, (boat_length+boat_buffer)/2+vps_spacing, vps_spacing),
+								  slice(-(boat_width+boat_buffer)/2, (boat_width+boat_buffer)/2+vps_spacing, vps_spacing)]
+vps_grid_x = vps_grid_x.reshape(vps_grid_x.size)
+vps_grid_y = vps_grid_y.reshape(vps_grid_y.size)
+vps = np.zeros((vps_grid_x.size, 2))
+for i in range(len(vps)):
+	vps[i] = [vps_grid_x[i], vps_grid_y[i]]
+vps = vps.T
+
+################################################# CONTROL POLICY
 
 # Body-frame gains
-kp = 5*np.diag([120, 120, 600])
-kd = 5*np.diag([120, 0, 50])
+# (let the dynamic's heading controller take care of heading)
+kp = np.diag([120, 120, 0])
+kd = np.diag([120, 120, 0])
 
 def lqr(x, u):
 	"""
@@ -291,36 +135,135 @@ def lqr(x, u):
 				  [           0,             0, 1]
 				])
 
-	S = np.diag([1, 1, 0, 0.05, 0.05, 0])
+	S = np.diag([1, 1, 1, 1, 1, 1])
 	K = np.hstack((kp.dot(R.T), kd))
 
 	return (S, K)
 
-################################################# SIMULATION PART 2
 
-# Real state and goal
-x = [x[0], x[1], x[2], x[3], 0, x[4]]
-goal = [goal[0], goal[1], goal[2], goal[3], 0, goal[4]]
+def erf(xgoal, x):
+	"""
+	Returns error e given two states xgoal and x.
+	Angle differences are taken properly on SO3.
+
+	"""
+	e = xgoal - x
+	c = np.cos(x[2])
+	s = np.sin(x[2])
+	cg = np.cos(xgoal[2])
+	sg = np.sin(xgoal[2])
+	e[2] = np.arctan2(sg*c - cg*s, cg*c + sg*s)
+	return e
+
+################################################# OBJECTIVES
+
+# Initial condition and goal
+x0 = np.array([0, 0, np.deg2rad(0), 0, 0, 0])
+goal = [40, 40, np.deg2rad(90), 0, 0, 0]
+goal_buffer = [8, 8, np.inf, np.inf, np.inf, np.inf]
+error_tol = np.copy(goal_buffer)/8
+
+################################################# CONSTRAINTS
+
+obs_choice = 'some'
+
+# No obstacles
+if obs_choice == 'none':
+	obs = []
+
+# Some obstacles [x, y, radius]
+elif obs_choice == 'some':
+	obs = np.array([[20, 20, 5],
+					[10, 30, 2],
+					[40, 10, 3]
+				  ])
+
+# Noised grid of obstacles
+elif obs_choice == 'grid':
+	obs_spacing = 12  # m
+	obs_range = (5, 60)
+	obs_grid_x, obs_grid_y = np.mgrid[slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing),
+									  slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing)]
+	obs_grid_x = obs_grid_x.reshape(obs_grid_x.size)
+	obs_grid_y = obs_grid_y.reshape(obs_grid_y.size)
+	obs = [-9999*np.ones(3)] * obs_grid_x.size
+	for i in range(len(obs)):
+		p = np.round([obs_grid_x[i], obs_grid_y[i]] + 3*(np.random.rand(2)-0.5), 2)
+		if npl.norm(p - goal[:2]) > 2*boat_length and npl.norm(np.array(p - x0[:2])) > 2*boat_length:
+			obs[i] = np.concatenate((p, [1]))
+
+####
+
+# Definition of collision
+def is_feasible(x, u):
+	# Body to world
+	R = np.array([
+				  [np.cos(x[2]), -np.sin(x[2])],
+				  [np.sin(x[2]),  np.cos(x[2])],
+				])
+	# Boat vertices in world frame
+	verts = x[:2] + np.vstack((R.dot(vps).T, x[:2]))
+	# Check for collisions over all obstacles
+	for ob in obs:
+		if np.any(npl.norm(verts - ob[:2], axis=1) <= ob[2]):
+			return False
+	return True
+
+################################################# HEURISTICS
+
+sample_space = [(x0[0], goal[0]),
+				(x0[1], goal[1]),
+				(0, 0),
+				(0.9*velmax_pos[0], velmax_pos[0]),
+				(-velmax_neg[1], velmax_pos[1]),
+				(-velmax_neg[2], velmax_pos[2])]
+
+goal_bias = [0.2, 0.2, 0, 0, 0, 0]
+
+xrand_gen = None
+
+################################################# PLAN
+
+constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
+								goal_buffer=goal_buffer, is_feasible=is_feasible)
+
+planner = lqrrt.Planner(dynamics, lqr, constraints,
+						horizon=2, dt=0.1,
+						error_tol=error_tol, erf=erf,
+						min_time=2, max_time=3, max_nodes=1E5,
+						goal0=goal)
+
+planner.update_plan(x0, sample_space, goal_bias=goal_bias,
+					xrand_gen=xrand_gen, finish_on_goal=False)
+
+################################################# SIMULATION
+
+# Prepare "real" domain
+dt = 0.03  # s
+T = planner.T  # s
+t_arr = np.arange(0, T, dt)
+framerate = 10
 
 # Preallocate results memory
+x = np.copy(x0)
 x_history = np.zeros((len(t_arr), nstates))
 xref_history = np.zeros((len(t_arr), nstates))
 goal_history = np.zeros((len(t_arr), nstates))
 u_history = np.zeros((len(t_arr), ncontrols))
 
-# Interpolate plan
+# Give back real control
+kp = np.diag([120, 120, 200])
+kd = np.diag([120, 120, 10])
+
+# Track plan
 for i, t in enumerate(t_arr):
 
 	# Planner's decision
-	xplan = planner.get_state(t)
-	uplan = planner.get_effort(t)
+	xref = planner.get_state(t)
+	uref = planner.get_effort(t)
 
-	# Trajectory
-	xref = [xplan[0], xplan[1], xplan[2], xplan[3], 0, xplan[4]]
-	uref = [uplan[0], 0, uplan[1]]
-
-	# Controllers decision
-	u = lqr(x, uref)[1].dot(erf(xref, np.copy(x)))
+	# Controller's decision
+	u = 2*lqr(x, uref)[1].dot(erf(xref, np.copy(x)))
 
 	# Record this instant
 	x_history[i, :] = x
