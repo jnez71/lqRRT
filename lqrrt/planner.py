@@ -40,6 +40,9 @@ class Planner:
 
 	dt: The simulation timestep in seconds used to extend the tree.
 
+	FPR: Failed Path Retention factor. When a path is grown and found to be infeasible,
+		 this is the fraction of the path that is retained up to that infeasible point.
+
 	error_tol: The state error array or scalar defining controller convergence.
 
 	erf: Function that takes two states xgoal and x and returns the state error
@@ -69,14 +72,14 @@ class Planner:
 
 	"""
 	def __init__(self, dynamics, lqr, constraints,
-				 horizon=5, dt=0.05,
+				 horizon=5, dt=0.05, FPR=0.5,
 				 error_tol=0.05, erf=np.subtract,
 				 min_time=0.5, max_time=1, max_nodes=1E5,
 				 goal0=None, system_time=time.time):
 
 		self.set_system(dynamics, lqr, constraints, erf)
 		
-		self.set_resolution(horizon, dt, error_tol)
+		self.set_resolution(horizon, dt, FPR, error_tol)
 
 		self.set_runtime(min_time, max_time, max_nodes)
 
@@ -89,7 +92,7 @@ class Planner:
 
 #################################################
 
-	def update_plan(self, x0, sample_space, goal_bias=0.1,
+	def update_plan(self, x0, sample_space, goal_bias=0,
 					xrand_gen=None, finish_on_goal=False):
 		"""
 		A new tree is grown from the seed x0 in an attempt to plan
@@ -308,8 +311,8 @@ class Planner:
 
 			# Check for feasibility
 			if not self.constraints.is_feasible(x, u):
-				x_seq = x_seq[:len(x_seq)//2]
-				u_seq = u_seq[:len(u_seq)//2]
+				x_seq = x_seq[:int(self.FPR * len(x_seq))]
+				u_seq = u_seq[:int(self.FPR * len(u_seq))]
 				break
 
 			# Check finish criteria
@@ -407,7 +410,7 @@ class Planner:
 
 #################################################
 
-	def set_resolution(self, horizon=None, dt=None, error_tol=None):
+	def set_resolution(self, horizon=None, dt=None, FPR=None, error_tol=None):
 		"""
 		See class docstring for argument definitions.
 		Arguments not given are not modified.
@@ -418,6 +421,9 @@ class Planner:
 
 		if dt is not None:
 			self.dt = dt
+
+		if FPR is not None:
+			self.FPR = FPR
 
 		if error_tol is not None:
 			if np.shape(error_tol) in [(), (self.nstates,)]:

@@ -182,7 +182,7 @@ constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
 								goal_buffer=goal_buffer, is_feasible=is_feasible)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
-						horizon=2, dt=0.1,
+						horizon=2, dt=0.1, FPR=0.5,
 						error_tol=error_tol, erf=erf,
 						min_time=1, max_time=2, max_nodes=1E5,
 						goal0=goal)
