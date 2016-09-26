@@ -24,21 +24,19 @@ class Constraints:
 
 	goal_buffer: Half-edge lengths of box defining goal region.
 
-	search_buffer: Additional span of the sampling space. List of tuples.
-
 	is_feasible: Function that takes a state and effort and returns a bool.
 
 	"""
 
-	def __init__(self, nstates, ncontrols, goal_buffer, search_buffer, is_feasible):
+	def __init__(self, nstates, ncontrols, goal_buffer, is_feasible):
 		self.nstates = nstates
 		self.ncontrols = ncontrols
-		self.set_buffers(goal_buffer, search_buffer)
+		self.set_buffers(goal_buffer)
 		self.set_feasibility_function(is_feasible)
 
 #################################################
 
-	def set_buffers(self, goal_buffer=None, search_buffer=None):
+	def set_buffers(self, goal_buffer=None):
 		"""
 		See class docstring for argument definitions.
 		Arguments not given are not modified.
@@ -46,17 +44,9 @@ class Constraints:
 		"""
 		if goal_buffer is not None:
 			if len(goal_buffer) == self.nstates:
-				self.goal_buffer = np.array(goal_buffer, dtype=np.float64)
+				self.goal_buffer = np.abs(goal_buffer).astype(np.float64)
 			else:
 				raise ValueError("The goal_buffer must have same dimensionality as state.")
-		
-		if search_buffer is not None:
-			if len(search_buffer) == self.nstates:
-				self.search_buffer = np.array(search_buffer, dtype=np.float64)
-				self.search_buffer_spans = np.diff(self.search_buffer).flatten()
-				self.search_buffer_offsets = np.mean(self.search_buffer, axis=1)
-			else:
-				raise ValueError("The search_buffer must have same dimensionality as state.")
 
 #################################################
 

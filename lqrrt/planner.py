@@ -34,17 +34,17 @@ class Planner:
 		 feedback gain matrix. That is, (S, K) = lqr(x, u).
 
 	constraints: Instance of the Constraints class that defines
-				 feasibility of states & efforts, search space, etc...
+				 feasibility of states & efforts, goal region, etc...
 
 	horizon: The simulation duration in seconds used to extend the tree.
 
 	dt: The simulation timestep in seconds used to extend the tree.
 
-	error_tol: The state error array defining convergence for the simulation.
-			   If a scalar is given, all states are tried against that scalar.
+	error_tol: The state error array or scalar defining controller convergence.
 
 	erf: Function that takes two states xgoal and x and returns the state error
-		 between them. Defaults to simple subtraction xgoal - x.
+		 between them. Defaults to simple subtraction xgoal - x. This is useful
+		 if your state includes a quaternion or heading.
 
 	min_time: The least number of seconds that the tree will
 			  grow for. That is, even if a feasible plan is found
@@ -69,7 +69,8 @@ class Planner:
 
 	"""
 	def __init__(self, dynamics, lqr, constraints,
-				 horizon=10, dt=0.05, error_tol=0.05, erf=np.subtract,
+				 horizon=5, dt=0.05,
+				 error_tol=0.05, erf=np.subtract,
 				 min_time=0.5, max_time=1, max_nodes=1E5,
 				 goal0=None, system_time=time.time):
 
@@ -88,14 +89,27 @@ class Planner:
 
 #################################################
 
-	def update_plan(self, x0, sampling_bias=0.2, xrand_gen=None,
-					finish_on_goal=True, reset_tree=True):
+	def update_plan(self, x0, sample_space, goal_bias=0.1,
+					xrand_gen=None, finish_on_goal=False):
 		"""
 		A new tree is grown from the seed x0 in an attempt to plan
 		a path to the goal. The returned path can be accessed with
 		the interpolator functions get_state(t) and get_effort(t).
 
-		After min_time seconds, the best available path from x0 to
+		The tree is motivated by uniform random samples in the over
+		the given sample_space. The sample_space is a list of n tuples
+		where n is the number of states; [(min1, max1), (min2, max2)...].
+
+		The goal_bias is the fraction of the time the goal is sampled.
+		It can be a scalar from 0 (none of the time) to 1 (all the time)
+		or a list of scalars corresponding to each state dimension.
+
+		Alternatively, you can give a function xrand_gen which takes the
+		current planner instance (self) and outputs the random sample state.
+		Doing this will override both sample_space and goal_bias, which you
+		can set to None only if you provide an xrand_gen.
+
+		After min_time seconds, the fastest available path from x0 to
 		the current goal is returned and the functions get_state(t)
 		and get_effort(t) are modified to interpolate this new path.
 
@@ -103,20 +117,9 @@ class Planner:
 		until the node limit is breached. After the limit, a warning is
 		printed and the path that gets nearest to the goal is used instead.
 
-		The sampling_bias is the fraction of the time the goal is sampled.
-		It can be a scalar from 0 (none of the time) to 1 (all of the time)
-		or a list of scalars corresponding to each state dimension.
-
-		Alternatively, you can give a function xrand_gen which takes the
-		current planner instance (self) and outputs the random sample state.
-		(Giving this will disregard sampling_bias). Python has no rules.
-
 		If finish_on_goal is set to True, once the plan makes it to the goal
 		region (goal plus buffer), it will attempt to steer one more path
 		directly into the exact goal. Can fail for nonholonomic systems.
-
-		If reset_tree is made False, the tree is not reset before growing
-		continues. THE SEED WILL NOT CHANGE TO X0. Just don't do this.
 
 		"""
 		# Safety first!
@@ -125,42 +128,46 @@ class Planner:
 			print("No goal has been set yet!")
 			self.get_state = lambda t: x0
 			self.get_effort = lambda t: np.zeros(self.ncontrols)
-			return None
+			return
 
-		# Reset the tree if told to (or if no tree exists yet)
-		if reset_tree or self.tree is None:
-			self.tree = Tree(x0, self.lqr(x0, np.zeros(self.ncontrols)))
-			self.x_seq = None
-			self.u_seq = None
-			self.t_seq = None
+		# Reset the tree
+		self.tree = Tree(x0, self.lqr(x0, np.zeros(self.ncontrols)))
 
 		# If not given an xrand_gen function, make the standard one
 		if xrand_gen is None:
 
-			# Properly cast the given sampling bias
-			if sampling_bias is None:
-				sampling_bias = [0] * self.nstates
-			elif hasattr(sampling_bias, '__contains__'):
-				if len(sampling_bias) != self.nstates:
-					raise ValueError("Expected sampling_bias to be scalar or have same length as state.")
+			# Properly cast the given goal bias
+			if goal_bias is None:
+				goal_bias = [0] * self.nstates
+			elif hasattr(goal_bias, '__contains__'):
+				if len(goal_bias) != self.nstates:
+					raise ValueError("Expected goal_bias to be scalar or have same length as state.")
 			else:
-				sampling_bias = [sampling_bias] * self.nstates
+				goal_bias = [goal_bias] * self.nstates
 
-			# If we are already in the goal region, just sample the goal
-			if self._in_goal(x0):
-				sampling_bias = [1] * self.nstates
+			# Properly cast the given sample space and extract statistics
+			sample_space = np.array(sample_space, dtype=np.float64)
+			if sample_space.shape != (self.nstates, 2):
+				raise ValueError("Expected sample_space to be list of nstates tuples.")
+			sampling_centers = np.mean(sample_space, axis=1)
+			sampling_spans = np.diff(sample_space).flatten()
 
-			# Error-sized hyperbox plus buffer
-			sampling_spans = 2*np.abs(self.goal - x0) + self.constraints.search_buffer_spans
-
-			# The standard xrand_gen is centered at goal, offset by search_buffer mean,
-			# and expanded to a hyperbox of size sampling_spans
+			# Standard sampling
 			def xrand_gen(planner):
-				xrand = self.goal + sampling_spans*(np.random.sample(self.nstates)-0.5) + self.constraints.search_buffer_offsets
-				for i, choice in enumerate(np.greater(sampling_bias, np.random.sample())): #<<< should make this more pythonic
+				xrand = sampling_centers + sampling_spans*(np.random.sample(self.nstates)-0.5)
+				for i, choice in enumerate(np.greater(goal_bias, np.random.sample())): #<<< should make this more pythonic
 					if choice:
 						xrand[i] = self.goal[i]
 				return xrand
+
+		# Otherwise, use given sampling function
+		else:
+			if not hasattr(xrand_gen, '__call__'):
+				raise ValueError("Expected xrand_gen to be None or a function.")
+
+		# If we are in the goal already, just sample the goal
+		if self._in_goal(x0):
+			xrand_gen = lambda planner: self.goal
 
 		# Loop managers
 		print("\n...planning...\n")
@@ -216,15 +223,15 @@ class Planner:
 			# Success
 			if self.plan_reached_goal and time_elapsed >= self.min_time:
 				if finish_on_goal:
-					# Add exact goal to the tree
+					# Steer to exact goal
 					xgoal_seq, ugoal_seq = self._steer(self.node_seq[-1], self.goal, force_arrive=True)
-					self.tree.add_node(self.node_seq[-1], self.goal, None, xgoal_seq, ugoal_seq)
-					# Tack it on to the plan too
-					self.node_seq.append(self.tree.size-1)
-					self.x_seq.extend(xgoal_seq)
-					self.u_seq.extend(ugoal_seq)
-					self.T = len(self.x_seq) * self.dt
-					self.t_seq = np.arange(len(self.x_seq)) * self.dt
+					# If it works, tack it onto the plan
+					if len(xgoal_seq) > 1:
+						self.tree.add_node(self.node_seq[-1], self.goal, None, xgoal_seq, ugoal_seq)
+						self.node_seq.append(self.tree.size-1)
+						self.x_seq.extend(xgoal_seq)
+						self.u_seq.extend(ugoal_seq)
+						self.t_seq = np.arange(len(self.x_seq)) * self.dt
 				# Over and out!
 				print("\nSuccess!\nTree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
 				self._prepare_interpolators()
@@ -268,12 +275,12 @@ class Planner:
 		If the state updates into an infeasible condition, the simulation
 		is finished and the path returned is half what was generated.
 
-		If the error magnitude between the sim state and xtar falls below
-		self.error_tol at any time, the simulation is also finished.
-
 		If force_arrive is set to True, then the simulation isn't finished
-		until error_tol is achieved or until a physical timeout. If it is
-		False, then the simulation will stop after self.horizon sim seconds.
+		until xtar is achieved or until a physical timeout.
+
+		If it is False, then the simulation will stop after self.horizon sim
+		seconds, or if the error increases instead of decreasing, or if the
+		error drops below some reasonable self.error_tol.
 
 		Returns the sequences of states and efforts. Note that the initial
 		state is not included in the returned trajectory (to avoid tree overlap).
@@ -283,6 +290,7 @@ class Planner:
 		K = np.copy(self.tree.lqr[ID][1])
 		x = np.copy(self.tree.state[ID])
 		x_seq = []; u_seq = []
+		# last_emag = np.inf
 		
 		# Management
 		i = 0; elapsed_time = 0
@@ -304,26 +312,27 @@ class Planner:
 				u_seq = u_seq[:len(u_seq)//2]
 				break
 
-			# Get next control policy
-			K = self.lqr(x, u)[1]
+			# Check finish criteria
+			if force_arrive:
+				elapsed_time = self.systime() - start_time
+				if elapsed_time > self.min_time:
+					print("(exact goal-convergence timed-out)")
+					break
+				if np.allclose(x, xtar, rtol=1E-2, atol=1E-3):
+					break
+			else:
+				i += 1
+				emag = np.abs(e)
+				if i > self.horizon_iters or np.all(emag <= self.error_tol):  # or np.all(emag >= last_emag): #<<< all or any
+					break
+				# last_emag = emag
 
 			# Record
 			x_seq.append(x)
 			u_seq.append(u)
 
-			# Error based finish criteria #<<< get rid of random slow convergences
-			if np.all(np.less_equal(np.abs(e), self.error_tol)):
-				break
-
-			# Time based finish criteria
-			if force_arrive:
-				elapsed_time = self.systime() - start_time
-				if elapsed_time > self.min_time:
-					break
-			else:
-				i += 1
-				if i > self.horizon_iters:
-					break
+			# Get next control policy
+			K = self.lqr(x, u)[1]
 
 		return (x_seq, u_seq)
 
@@ -411,12 +420,15 @@ class Planner:
 			self.dt = dt
 
 		if error_tol is not None:
-			if np.array(error_tol).shape in [(), (self.nstates,)]:
-				self.error_tol = error_tol
+			if np.shape(error_tol) in [(), (self.nstates,)]:
+				self.error_tol = np.abs(error_tol).astype(np.float64)
 			else:
 				raise ValueError("Shape of error_tol must be scalar or length of state.")
 
-		self.horizon_iters = self.horizon / self.dt
+		if self.horizon >= self.dt:
+			self.horizon_iters = self.horizon / self.dt
+		else:
+			raise ValueError("The horizon must be at least as big as dt.")
 
 #################################################
 
@@ -425,7 +437,6 @@ class Planner:
 		See class docstring for argument definitions.
 		Arguments not given are not modified.
 		If dynamics gets modified, so must lqr (and vis versa).
-		Calling this function resets the tree and plan.
 
 		"""
 		if dynamics is not None or lqr is not None:
@@ -453,10 +464,6 @@ class Planner:
 				raise ValueError("Expected erf to be a function.")
 
 		self.plan_reached_goal = False
-		self.tree = None
-		self.x_seq = None
-		self.u_seq = None
-		self.t_seq = None
 
 #################################################
 
