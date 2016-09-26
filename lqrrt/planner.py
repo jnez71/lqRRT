@@ -189,7 +189,7 @@ class Planner:
 			xnew_seq, unew_seq = self._steer(nearestID, xrand, force_arrive=False)
 
 			# If steer produced any feasible results, extend tree
-			if len(xnew_seq) > 1:
+			if len(xnew_seq) > 0:
 
 				# Add the new node to the tree
 				xnew = np.copy(xnew_seq[-1])
@@ -226,7 +226,7 @@ class Planner:
 					# Steer to exact goal
 					xgoal_seq, ugoal_seq = self._steer(self.node_seq[-1], self.goal, force_arrive=True)
 					# If it works, tack it onto the plan
-					if len(xgoal_seq) > 1:
+					if len(xgoal_seq) > 0:
 						self.tree.add_node(self.node_seq[-1], self.goal, None, xgoal_seq, ugoal_seq)
 						self.node_seq.append(self.tree.size-1)
 						self.x_seq.extend(xgoal_seq)
@@ -426,7 +426,7 @@ class Planner:
 				raise ValueError("Shape of error_tol must be scalar or length of state.")
 
 		if self.horizon >= self.dt:
-			self.horizon_iters = self.horizon / self.dt
+			self.horizon_iters = int(self.horizon / self.dt)
 		else:
 			raise ValueError("The horizon must be at least as big as dt.")
 
