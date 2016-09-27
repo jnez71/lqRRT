@@ -297,8 +297,8 @@ ax1.scatter(goal[dx], goal[dy], color='g', s=48)
 for ob in obs:
 	ax1.add_patch(plt.Circle((ob[0], ob[1]), radius=ob[2], fc='r'))
 
-print("\nClose the plot window to continue to animation.")
-plt.show()
+# print("\nClose the plot window to continue to animation.")
+# plt.show()
 
 
 # Animation
