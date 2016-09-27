@@ -37,6 +37,7 @@ class Planner:
 				 feasibility of states & efforts, goal region, etc...
 
 	horizon: The simulation duration in seconds used to extend the tree.
+			 If you set this to 0, a pseudo-reachability-guided heuristic is used.
 
 	dt: The simulation timestep in seconds used to extend the tree.
 
@@ -72,7 +73,7 @@ class Planner:
 
 	"""
 	def __init__(self, dynamics, lqr, constraints,
-				 horizon=5, dt=0.05, FPR=0.5,
+				 horizon, dt=0.05, FPR=0.5,
 				 error_tol=0.05, erf=np.subtract,
 				 min_time=0.5, max_time=1, max_nodes=1E5,
 				 goal0=None, system_time=time.time):
@@ -282,8 +283,7 @@ class Planner:
 		until xtar is achieved or until a physical timeout.
 
 		If it is False, then the simulation will stop after self.horizon sim
-		seconds, or if the error increases instead of decreasing, or if the
-		error drops below some reasonable self.error_tol.
+		seconds or if the error drops below some reasonable self.error_tol.
 
 		Returns the sequences of states and efforts. Note that the initial
 		state is not included in the returned trajectory (to avoid tree overlap).
@@ -293,7 +293,7 @@ class Planner:
 		K = np.copy(self.tree.lqr[ID][1])
 		x = np.copy(self.tree.state[ID])
 		x_seq = []; u_seq = []
-		# last_emag = np.inf
+		last_emag = np.inf
 		
 		# Management
 		i = 0; elapsed_time = 0
@@ -315,20 +315,37 @@ class Planner:
 				u_seq = u_seq[:int(self.FPR * len(u_seq))]
 				break
 
-			# Check finish criteria
+			# Check force-arrive finish criteria
 			if force_arrive:
+
+				# Physical time limit
 				elapsed_time = self.systime() - start_time
 				if elapsed_time > self.min_time:
 					print("(exact goal-convergence timed-out)")
 					break
+				
+				# Definite convergence criteria
 				if np.allclose(x, xtar, rtol=1E-2, atol=1E-3):
 					break
+			
+			# or check lenient-arrive finish criteria
 			else:
 				i += 1
 				emag = np.abs(e)
-				if i > self.horizon_iters or np.all(emag <= self.error_tol):  # or np.all(emag >= last_emag): #<<< all or any
+				
+				# "Reachability" heuristic
+				if self.rfactor:
+					if np.all(emag >= last_emag):
+						x_seq = []; u_seq = []
+						self.horizon_iters = int(np.clip(self.horizon_iters/self.rfactor, 1, 1/self.dt))
+						break
+					if i == self.horizon_iters:
+						self.horizon_iters = int(np.clip(self.rfactor*self.horizon_iters, 1, 1/self.dt))
+					last_emag = emag
+				
+				# Horizon, or tolerable convergence criteria
+				if i > self.horizon_iters or np.all(emag <= self.error_tol):
 					break
-				# last_emag = emag
 
 			# Record
 			x_seq.append(x)
@@ -433,6 +450,10 @@ class Planner:
 
 		if self.horizon >= self.dt:
 			self.horizon_iters = int(self.horizon / self.dt)
+			self.rfactor = 0
+		elif self.horizon == 0:
+			self.horizon_iters = 1
+			self.rfactor = int(2)
 		else:
 			raise ValueError("The horizon must be at least as big as dt.")
 
