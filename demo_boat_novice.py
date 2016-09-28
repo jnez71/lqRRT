@@ -77,8 +77,8 @@ def dynamics(x, u, dt):
 ################################################# VEHICLE DIMENSIONS
 
 # Vehicle dimensions
-boat_length = 6  # m
-boat_width = 3  # m
+boat_length = 210 * 0.0254  # m
+boat_width = 96 * 0.0254  # m
 
 ################################################# CONTROL POLICY
 

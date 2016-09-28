@@ -102,8 +102,8 @@ def dynamics(x, u, dt):
 ################################################# VEHICLE DIMENSIONS
 
 # Boat shape and resolution
-boat_length = 6  # m
-boat_width = 3  # m
+boat_length = 210 * 0.0254  # m
+boat_width = 96 * 0.0254  # m
 boat_buffer = 2  # m
 vps_spacing = 0.5  # m
 
@@ -165,7 +165,7 @@ error_tol = np.copy(goal_buffer)/8
 
 ################################################# CONSTRAINTS
 
-obs_choice = 'some'
+obs_choice = 'grid'
 
 # No obstacles
 if obs_choice == 'none':
