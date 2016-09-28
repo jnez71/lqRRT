@@ -244,7 +244,13 @@ class Planner:
 			# Failure (kinda)
 			elif (time_elapsed >= self.max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal:
 				# Climb tree to construct sequence of nodes from seed to closest-node-to-goal
-				closestID = np.argmin(self._costs_to_go(self.goal))
+				# where closest ignores goals you don't care about
+				Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
+				for i, g in enumerate(self.constraints.goal_buffer):
+					if np.isinf(g):
+						Sgoal[:, i] = 0
+				goaldiffs = self.tree.state - self.goal
+				closestID = np.argmin(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
 				self.node_seq = self.tree.climb(closestID)
 				# Construct plan
 				self.x_seq, self.u_seq = self.tree.trajectory(self.node_seq)
