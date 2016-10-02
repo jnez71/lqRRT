@@ -425,8 +425,8 @@ class Planner:
 		if max_time is not None:
 			self.max_time = max_time
 
-		if self.min_time >= self.max_time:
-			raise ValueError("The min_time must be strictly less than the max_time.")
+		if self.min_time > self.max_time:
+			raise ValueError("The min_time must be less than or equal to the max_time.")
 
 		if max_nodes is not None:
 			self.max_nodes = max_nodes
