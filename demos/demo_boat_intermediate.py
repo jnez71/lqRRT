@@ -202,7 +202,7 @@ def is_feasible(x, u):
 				  [np.sin(x[2]),  np.cos(x[2])],
 				])
 	# Boat vertices in world frame
-	verts = x[:2] + np.vstack((R.dot(vps).T, x[:2]))
+	verts = x[:2] + R.dot(vps).T
 	# Check for collisions over all obstacles
 	for ob in obs:
 		if np.any(npl.norm(verts - ob[:2], axis=1) <= ob[2]):
