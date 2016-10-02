@@ -121,13 +121,13 @@ def dynamics(x, u, dt):
 	# First-order integrate
 	xnext = x + xdot*dt
 
-	# Impose not turning in place
+	# Planning dynamics
 	if planning:
+		# Impose not turning in place
 		if x[3] > 0:
 			xnext[5] = np.clip(np.abs(xnext[3]/velmax_pos[0]), 0, 1) * xnext[5]
 		elif x[3] < 0:
 			xnext[5] = np.clip(np.abs(xnext[3]/velmax_neg[0]), 0, 1) * xnext[5]
-
 		# Impose not driving backwards
 		if xnext[3] < 0:
 			xnext[3] = 0
