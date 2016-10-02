@@ -251,15 +251,29 @@ class Planner:
 
 			# Failure (kinda)
 			elif (time_elapsed >= self.max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal:
-				# Climb tree to construct sequence of nodes from seed to closest-node-to-goal
-				# where closest ignores goals you don't care about
+				# Find node that has the most potential to steer to the goal
 				Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
 				for i, g in enumerate(self.constraints.goal_buffer):
 					if np.isinf(g):
 						Sgoal[:, i] = 0
 				goaldiffs = self.tree.state - self.goal
-				closestID = np.argmin(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
-				self.node_seq = self.tree.climb(closestID)
+				closestIDs = np.argsort(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
+				best_dist = np.inf
+				for i, ID in enumerate(closestIDs[:np.ceil(0.5*self.tree.size)]):
+					xcheck_seq, ucheck_seq = self._steer(ID, self.goal, force_arrive=False)
+					if len(xcheck_seq) > 1:
+						diff = xcheck_seq[-1] - self.goal
+						dist = diff.dot(Sgoal.dot(diff))
+						if dist < best_dist:
+							best_dist = dist
+							best_ID = ID
+							best_xcheck_seq = xcheck_seq
+							best_ucheck_seq = ucheck_seq
+				if not np.isinf(best_dist):
+					self.tree.add_node(best_ID, best_xcheck_seq[-1], None, best_xcheck_seq, best_ucheck_seq)
+					self.node_seq = self.tree.climb(self.tree.size-1)
+				else:
+					self.node_seq = self.tree.climb(closestIDs[0])
 				# Construct plan
 				self.x_seq, self.u_seq = self.tree.trajectory(self.node_seq)
 				self.T = len(self.x_seq) * self.dt
