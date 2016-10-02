@@ -169,9 +169,17 @@ class Planner:
 			if not hasattr(xrand_gen, '__call__'):
 				raise ValueError("Expected xrand_gen to be None or a function.")
 
-		# If we are in the goal already, just sample the goal
+		# If we are in the goal already, just get to the center
 		if self._in_goal(x0):
-			xrand_gen = lambda planner: self.goal
+			print("\n...planning to goal center...\n")
+			self.x_seq, self.u_seq = self._steer(0, self.goal, force_arrive=True)
+			self.x_seq.append(self.goal)
+			self.u_seq.append(np.zeros(self.ncontrols))
+			self.t_seq = np.arange(len(self.x_seq)) * self.dt
+			self.T = self.t_seq[-1] + self.dt
+			self.node_seq = self.tree.climb(self.tree.size-1)
+			self._prepare_interpolators()
+			return
 
 		# Loop managers
 		print("\n...planning...\n")
@@ -326,12 +334,12 @@ class Planner:
 
 				# Physical time limit
 				elapsed_time = self.systime() - start_time
-				if elapsed_time > self.min_time:
+				if elapsed_time > self.min_time/2:
 					print("(exact goal-convergence timed-out)")
 					break
 				
 				# Definite convergence criteria
-				if np.allclose(x, xtar, rtol=1E-2, atol=1E-3):
+				if np.allclose(x, xtar, rtol=1E-4, atol=1E-4):
 					break
 			
 			# or check lenient-arrive finish criteria
