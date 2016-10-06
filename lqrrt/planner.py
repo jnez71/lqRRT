@@ -94,7 +94,8 @@ class Planner:
 #################################################
 
 	def update_plan(self, x0, sample_space, goal_bias=0,
-					xrand_gen=None, finish_on_goal=False):
+					xrand_gen=None, finish_on_goal=False,
+					min_time=None, max_time=None):
 		"""
 		A new tree is grown from the seed x0 in an attempt to plan
 		a path to the goal. The returned path can be accessed with
@@ -125,6 +126,9 @@ class Planner:
 		region (goal plus buffer), it will attempt to steer one more path
 		directly into the exact goal. Can fail for nonholonomic systems.
 
+		You can pass in a specific min_time and max_time for this update that
+		will, just for this update, overshadow the global min and max times.
+
 		"""
 		# Safety first!
 		x0 = np.array(x0, dtype=np.float64)
@@ -133,6 +137,12 @@ class Planner:
 			self.get_state = lambda t: x0
 			self.get_effort = lambda t: np.zeros(self.ncontrols)
 			return
+
+		# Store timing
+		if min_time is None:
+			min_time = self.min_time
+		if max_time is None:
+			max_time = self.max_time
 
 		# Reset the tree
 		self.tree = Tree(x0, self.lqr(x0, np.zeros(self.ncontrols)))
@@ -233,7 +243,7 @@ class Planner:
 			time_elapsed = self.systime() - time_start
 
 			# Success
-			if self.plan_reached_goal and time_elapsed >= self.min_time:
+			if self.plan_reached_goal and time_elapsed >= min_time:
 				if finish_on_goal:
 					# Steer to exact goal
 					xgoal_seq, ugoal_seq = self._steer(self.node_seq[-1], self.goal, force_arrive=True)
@@ -250,7 +260,7 @@ class Planner:
 				break
 
 			# Failure (kinda)
-			elif (time_elapsed >= self.max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal:
+			elif (time_elapsed >= max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal:
 				# Find node that has the most potential to steer to the goal
 				Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
 				for i, g in enumerate(self.constraints.goal_buffer):
