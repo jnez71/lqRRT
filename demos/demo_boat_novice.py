@@ -21,7 +21,7 @@ import lqrrt
 
 # Experimentally determined mass and inertia
 m = 500  # kg
-I = 500  # kg/m^2
+I = 500  # kg*m^2
 invM = np.array([1/m, 1/m, 1/I])
 
 # Experimentally determined top speeds of the boat
