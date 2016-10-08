@@ -86,10 +86,7 @@ class Planner:
 
 		self.set_goal(goal0)
 
-		if hasattr(system_time, '__call__'):
-			self.systime = system_time
-		else:
-			raise ValueError("Expected system_time to be a function.")
+		self.set_system_time(system_time)
 
 #################################################
 
@@ -532,6 +529,18 @@ class Planner:
 				raise ValueError("Expected erf to be a function.")
 
 		self.plan_reached_goal = False
+
+#################################################
+
+	def set_system_time(self, system_time):
+		"""
+		Sets the system time function, which gets called when the current physical time is needed.
+
+		"""
+		if hasattr(system_time, '__call__'):
+			self.systime = system_time
+		else:
+			raise ValueError("Expected system_time to be a function.")
 
 #################################################
 
