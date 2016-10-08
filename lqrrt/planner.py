@@ -95,7 +95,7 @@ class Planner:
 
 	def update_plan(self, x0, sample_space, goal_bias=0,
 					xrand_gen=None, finish_on_goal=False,
-					min_time=None, max_time=None):
+					specific_time=None):
 		"""
 		A new tree is grown from the seed x0 in an attempt to plan
 		a path to the goal. The returned path can be accessed with
@@ -126,8 +126,9 @@ class Planner:
 		region (goal plus buffer), it will attempt to steer one more path
 		directly into the exact goal. Can fail for nonholonomic systems.
 
-		You can pass in a specific min_time and max_time for this update that
-		will, just for this update, overshadow the global min and max times.
+		If you want this update_plan to plan for some specific amount of
+		time (instead of using the global min_time and max_time), pass it
+		in as specific_time in seconds.
 
 		"""
 		# Safety first!
@@ -139,10 +140,12 @@ class Planner:
 			return
 
 		# Store timing
-		if min_time is None:
+		if specific_time is None:
 			min_time = self.min_time
-		if max_time is None:
 			max_time = self.max_time
+		else:
+			min_time = specific_time
+			max_time = specific_time
 
 		# Reset the tree
 		self.tree = Tree(x0, self.lqr(x0, np.zeros(self.ncontrols)))
