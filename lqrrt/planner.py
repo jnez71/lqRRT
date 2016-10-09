@@ -88,6 +88,8 @@ class Planner:
 
 		self.set_system_time(system_time)
 
+		self.killed = False
+
 #################################################
 
 	def update_plan(self, x0, sample_space, goal_bias=0,
@@ -127,6 +129,10 @@ class Planner:
 		time (instead of using the global min_time and max_time), pass it
 		in as specific_time in seconds.
 
+		This function returns True if it finished fully, or False if it was
+		haulted. It can hault if it is killed or if the tree exceeds max_nodes,
+		or if no goal has been set yet.
+
 		"""
 		# Safety first!
 		x0 = np.array(x0, dtype=np.float64)
@@ -134,7 +140,7 @@ class Planner:
 			print("No goal has been set yet!")
 			self.get_state = lambda t: x0
 			self.get_effort = lambda t: np.zeros(self.ncontrols)
-			return
+			return False
 
 		# Store timing
 		if specific_time is None:
@@ -181,7 +187,8 @@ class Planner:
 
 		# If we are in the goal already, just get to the center
 		if self._in_goal(x0):
-			print("\n...planning to goal center...\n")
+			# print("\n...planning to goal center...\n")
+			self.plan_reached_goal = True
 			self.x_seq, self.u_seq = self._steer(0, self.goal, force_arrive=True)
 			self.x_seq.append(self.goal)
 			self.u_seq.append(np.zeros(self.ncontrols))
@@ -189,10 +196,10 @@ class Planner:
 			self.T = self.t_seq[-1] + self.dt
 			self.node_seq = self.tree.climb(self.tree.size-1)
 			self._prepare_interpolators()
-			return
+			return True
 
 		# Loop managers
-		print("\n...planning...\n")
+		print("...planning...\n")
 		self.plan_reached_goal = False
 		self.T = np.inf
 		time_elapsed = 0
@@ -255,12 +262,12 @@ class Planner:
 						self.u_seq.extend(ugoal_seq)
 						self.t_seq = np.arange(len(self.x_seq)) * self.dt
 				# Over and out!
-				print("\nSuccess!\nTree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
+				print("Tree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
 				self._prepare_interpolators()
 				break
 
 			# Failure (kinda)
-			elif (time_elapsed >= max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal:
+			elif ((time_elapsed >= max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal) or self.killed:
 				# Find node that has the most potential to steer to the goal
 				Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
 				for i, g in enumerate(self.constraints.goal_buffer):
@@ -292,6 +299,13 @@ class Planner:
 				print("Didn't reach goal.\nTree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
 				self._prepare_interpolators()
 				break
+
+		if self.killed or self.tree.size > self.max_nodes:
+			print("Plan update terminated abruptly!")
+			self.killed = False
+			return False
+		else:
+			return True
 
 #################################################
 
@@ -541,6 +555,24 @@ class Planner:
 			self.systime = system_time
 		else:
 			raise ValueError("Expected system_time to be a function.")
+
+#################################################
+
+	def kill_update(self):
+		"""
+		Raises a flag that will cause an abrupt termination of the update_plan routine.
+
+		"""
+		self.killed = True
+
+#################################################
+
+	def unkill(self):
+		"""
+		Lowers the kill_update flag. Do this if you made a mistake.
+
+		"""
+		self.killed = False
 
 #################################################
 
