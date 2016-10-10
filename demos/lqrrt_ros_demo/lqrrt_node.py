@@ -142,8 +142,8 @@ class LQRRT_Node(object):
 		self.busy = False
 
 		# Visualizers
-		self.publish_path()
 		self.publish_tree()
+		self.publish_path()
 
 
 	def select_behavior(self):
@@ -333,7 +333,7 @@ class LQRRT_Node(object):
 			self.next_seed = np.copy(self.state)
 			self.goal_cb(self.pack_posestamped(self.state, rospy.Time.now()))
 			self.waiting_for_odom = False
-		if np.all(behaviors.params.erf(self.goal, self.state) <= behaviors.params.real_tol):
+		if np.all(np.abs(behaviors.params.erf(self.goal, self.state)) <= behaviors.params.real_tol):
 			self.done_pub.publish(Bool(data=True))
 		else:
 			self.done_pub.publish(Bool(data=False))
