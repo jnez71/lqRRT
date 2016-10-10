@@ -18,7 +18,7 @@ ss_buff = 10  # m
 horizon = 2  # s
 dt = 0.1  # s
 max_nodes = 1E5
-real_tol = [0.1, 0.1, np.deg2rad(5), 0.1, 0.1, np.deg2rad(5)]
+real_tol = [1.5, 1.5, np.deg2rad(10), np.inf, np.inf, np.inf]
 
 #################################################
 
@@ -38,8 +38,8 @@ invM = np.array([1/m, 1/m, 1/I])
 # Physical top speeds and thrusts
 # velmax_pos = np.copy(velmax_pos_plan)
 # velmax_neg = np.copy(velmax_neg_plan)
-velmax_pos = np.array([2, 0.8, 0.5])  # (m/s, m/s, rad/s), body-frame forward
-velmax_neg = np.array([-0.8, -0.8, -0.5])  # (m/s, m/s, rad/s), body-frame backward
+velmax_pos = np.array([1.5, 0.6, 0.25])  # (m/s, m/s, rad/s), body-frame forward
+velmax_neg = np.array([-0.8, -0.6, -0.25])  # (m/s, m/s, rad/s), body-frame backward
 thrust_max = np.array([220, 220, 220, 220])  # N, per thruster
 
 #################################################
