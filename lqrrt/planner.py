@@ -71,12 +71,14 @@ class Planner:
 	system_time: Function that returns the real-world system time.
 				 Defaults to the Python time library's time().
 
+	printing: Bool that specifies if internal stuff should be printed.
+
 	"""
 	def __init__(self, dynamics, lqr, constraints,
 				 horizon, dt=0.05, FPR=0.5,
 				 error_tol=0.05, erf=np.subtract,
 				 min_time=0.5, max_time=1, max_nodes=1E5,
-				 goal0=None, system_time=time.time):
+				 goal0=None, system_time=time.time, printing=True):
 
 		self.set_system(dynamics, lqr, constraints, erf)
 		
@@ -88,6 +90,7 @@ class Planner:
 
 		self.set_system_time(system_time)
 
+		self.printing = printing
 		self.killed = False
 
 #################################################
@@ -199,7 +202,8 @@ class Planner:
 			return True
 
 		# Loop managers
-		print("...planning...\n")
+		if self.printing:
+			print("\n...planning...")
 		self.plan_reached_goal = False
 		self.T = np.inf
 		time_elapsed = 0
@@ -244,7 +248,8 @@ class Planner:
 						self.x_seq = x_seq
 						self.u_seq = u_seq
 						self.t_seq = np.arange(len(self.x_seq)) * self.dt
-						print("Found plan at elapsed time: {} s".format(np.round(time_elapsed, 6)))
+						if self.printing:
+							print("Found plan at elapsed time: {} s".format(np.round(time_elapsed, 6)))
 
 			# Check if we should stop planning
 			time_elapsed = self.systime() - time_start
@@ -262,7 +267,8 @@ class Planner:
 						self.u_seq.extend(ugoal_seq)
 						self.t_seq = np.arange(len(self.x_seq)) * self.dt
 				# Over and out!
-				print("Tree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
+				if self.printing:
+					print("Tree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
 				self._prepare_interpolators()
 				break
 
@@ -296,12 +302,14 @@ class Planner:
 				self.T = len(self.x_seq) * self.dt
 				self.t_seq = np.arange(len(self.x_seq)) * self.dt
 				# Over and out!
-				print("Didn't reach goal.\nTree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
+				if self.printing:
+					print("Didn't reach goal.\nTree size: {0}\nETA: {1} s".format(self.tree.size, np.round(self.T, 2)))
 				self._prepare_interpolators()
 				break
 
 		if self.killed or self.tree.size > self.max_nodes:
-			print("Plan update terminated abruptly!")
+			if self.printing:
+				print("Plan update terminated abruptly!")
 			self.killed = False
 			return False
 		else:
