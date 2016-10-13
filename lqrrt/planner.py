@@ -177,11 +177,14 @@ class Planner:
 
 			# Standard sampling
 			def xrand_gen(planner):
-				xrand = sampling_centers + sampling_spans*(np.random.sample(self.nstates)-0.5)
-				for i, choice in enumerate(np.greater(goal_bias, np.random.sample())): #<<< should make this more pythonic
-					if choice:
-						xrand[i] = self.goal[i]
-				return xrand
+				while time_elapsed < max_time:
+					xrand = sampling_centers + sampling_spans*(np.random.sample(self.nstates)-0.5)
+					for i, choice in enumerate(np.greater(goal_bias, np.random.sample())): #<<< should make this more pythonic
+						if choice:
+							xrand[i] = self.goal[i]
+					if self.constraints.is_feasible(xrand, np.zeros(self.ncontrols)):
+						return xrand
+				return self.goal
 
 		# Otherwise, use given sampling function
 		else:
