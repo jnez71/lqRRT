@@ -229,9 +229,9 @@ def is_feasible(x, u):
 sample_space = [(x0[0], goal[0]),
 				(x0[1], goal[1]),
 				(0, 0),
-				(0.9*velmax_pos[0], velmax_pos[0]),
-				(-abs(velmax_neg[1]), velmax_pos[1]),
-				(-abs(velmax_neg[2]), velmax_pos[2])]
+				(0.9*velmax_pos_plan[0], velmax_pos_plan[0]),
+				(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
+				(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
 
 goal_bias = [0.2, 0.2, 0, 0, 0, 0]
 
