@@ -1,11 +1,8 @@
 """
 Demo of using the lqrrt planner for boats.
-Rather than exploring once all the way to the goal, we show
-how you can chain short-distance dense-explorations in realtime.
-Additionally, we constrain individual thrusts instead of wrench
-components for a boat with 4 thusters. Lastly, velocity limits
-are properly imposed through the feasibility function instead
-of through the natural drag on the boat.
+Individual thrusts are constrained instead of wrench components,
+for a boat with 4 thusters. Velocity limits are properly imposed
+through the feasibility function instead of through the real drag.
 
 State:   [x, y, h, vx, vy, vh]  (m, m, rad, m/s, m/s, rad/s)
 Effort:  [ux, uy, uh]           (N, N, N*m)
@@ -14,8 +11,6 @@ Pose states are world-frame.
 Twist states and wrench are body-frame.
 
 """
-
-#<<< DOES NOT DO INCREMENTAL EXPLORING YET
 
 ################################################# DEPENDENCIES
 
