@@ -44,6 +44,10 @@ class Planner:
 	FPR: Failed Path Retention factor. When a path is grown and found to be infeasible,
 		 this is the fraction of the path that is retained up to that infeasible point.
 
+	CPF: Connection Potential Factor. When the growth must be ended but the goal region
+		 hasn't been reached, the path to the best node is used where best is judged
+		 by potential to steer to the goal. This multiplies that steer's horizon.
+
 	error_tol: The state error array or scalar defining controller convergence.
 
 	erf: Function that takes two states xgoal and x and returns the state error
@@ -75,14 +79,14 @@ class Planner:
 
 	"""
 	def __init__(self, dynamics, lqr, constraints,
-				 horizon, dt=0.05, FPR=0.5,
+				 horizon, dt=0.05, FPR=0, CPF=2,
 				 error_tol=0.05, erf=np.subtract,
 				 min_time=0.5, max_time=1, max_nodes=1E5,
 				 goal0=None, system_time=time.time, printing=True):
 
 		self.set_system(dynamics, lqr, constraints, erf)
 		
-		self.set_resolution(horizon, dt, FPR, error_tol)
+		self.set_resolution(horizon, dt, FPR, CPF, error_tol)
 
 		self.set_runtime(min_time, max_time, max_nodes)
 
@@ -179,7 +183,7 @@ class Planner:
 			def xrand_gen(planner):
 				while time_elapsed < max_time:
 					xrand = sampling_centers + sampling_spans*(np.random.sample(self.nstates)-0.5)
-					for i, choice in enumerate(np.greater(goal_bias, np.random.sample())): #<<< should make this more pythonic
+					for i, choice in enumerate(np.greater(goal_bias, np.random.sample())):
 						if choice:
 							xrand[i] = self.goal[i]
 					if self.constraints.is_feasible(xrand, np.zeros(self.ncontrols)):
@@ -285,6 +289,7 @@ class Planner:
 				goaldiffs = self.tree.state - self.goal
 				closestIDs = np.argsort(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
 				best_dist = np.inf
+				self.horizon_iters *= self.CPF
 				for i, ID in enumerate(closestIDs[:np.ceil(0.5*self.tree.size)]):
 					xcheck_seq, ucheck_seq = self._steer(ID, self.goal, force_arrive=False)
 					if len(xcheck_seq) > 1:
@@ -295,6 +300,7 @@ class Planner:
 							best_ID = ID
 							best_xcheck_seq = xcheck_seq
 							best_ucheck_seq = ucheck_seq
+				self.set_resolution()
 				if not np.isinf(best_dist):
 					self.tree.add_node(best_ID, best_xcheck_seq[-1], None, best_xcheck_seq, best_ucheck_seq)
 					self.node_seq = self.tree.climb(self.tree.size-1)
@@ -383,8 +389,9 @@ class Planner:
 
 				# Physical time limit
 				elapsed_time = self.systime() - start_time
-				if elapsed_time > self.min_time/2:
-					print("(exact goal-convergence timed-out)")
+				if elapsed_time > np.clip(self.min_time/2, 0.1, np.inf):
+					if self.printing:
+						print("(exact goal-convergence timed-out)")
 					break
 				
 				# Definite convergence criteria
@@ -490,7 +497,7 @@ class Planner:
 
 #################################################
 
-	def set_resolution(self, horizon=None, dt=None, FPR=None, error_tol=None):
+	def set_resolution(self, horizon=None, dt=None, FPR=None, CPF=None, error_tol=None):
 		"""
 		See class docstring for argument definitions.
 		Arguments not given are not modified.
@@ -504,6 +511,9 @@ class Planner:
 
 		if FPR is not None:
 			self.FPR = FPR
+
+		if CPF is not None:
+			self.CPF = CPF
 
 		if error_tol is not None:
 			if np.shape(error_tol) in [(), (self.nstates,)]:
