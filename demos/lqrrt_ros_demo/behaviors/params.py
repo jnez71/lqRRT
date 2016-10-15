@@ -1,48 +1,48 @@
 """
-Parameters that are the same for all planners.
+Parameters that are the same for all behaviors.
 
 """
 from __future__ import division
 import numpy as np
 
-#################################################
+################################################# DIMENSIONALITY
 
-# Dimensionality
 nstates = 6
 ncontrols = 3
 
-#################################################
+################################################# BEHAVIOR CONTROL
 
-# Tree growth
-ss_buff = 10  # m
+real_tol = [1.5, 1.5, np.deg2rad(10), np.inf, np.inf, np.inf]
+pointshoot_tol = np.deg2rad(20)  # rad
+basic_duration = 1  # s
+free_radius = 6  # m
+
+################################################# TREE GROWTH
+
 horizon = 2  # s
 dt = 0.1  # s
+FPR = 0.5
+ss_buff = 10  # m
 max_nodes = 1E5
-real_tol = [1.5, 1.5, np.deg2rad(10), np.inf, np.inf, np.inf]
 
-#################################################
+################################################# PLAN SPEED LIMITS
 
-# Speed limits for the planner to use (so we don't move too fast for controller tracking)
 velmax_pos_plan = np.array([1.1, 0.4, 0.2])  # (m/s, m/s, rad/s), body-frame forward
 velmax_neg_plan = np.array([-0.7, -0.4, -0.2])  # (m/s, m/s, rad/s), body-frame backward
 
-#################################################
+################################################# INERTIA
 
-# Mass and yaw inertia
 m = 350  # kg
 I = 400  # kg*m^2
 invM = np.array([1/m, 1/m, 1/I])
 
-#################################################
+################################################# REAL SPEED AND THRUST LIMITS
 
-# Physical top speeds and thrusts
-# velmax_pos = np.copy(velmax_pos_plan)
-# velmax_neg = np.copy(velmax_neg_plan)
 velmax_pos = np.array([1.5, 0.6, 0.25])  # (m/s, m/s, rad/s), body-frame forward
 velmax_neg = np.array([-0.8, -0.6, -0.25])  # (m/s, m/s, rad/s), body-frame backward
 thrust_max = np.array([220, 220, 220, 220])  # N, per thruster
 
-#################################################
+################################################# THRUSTER CONFIGURATION
 
 # Thruster layout, [back-left, back-right, front-left front-right] (m)
 thruster_positions = np.array([[-1.9000,  1.0000, -0.0123],
@@ -61,16 +61,15 @@ thrust_levers = np.cross(thruster_positions, thruster_directions)
 B = np.concatenate((thruster_directions.T, thrust_levers.T))[[0, 1, 5]]
 invB = np.linalg.pinv(B)
 
-#################################################
+################################################# EFFECTIVE DRAG
 
-# Effective linear drag coefficients given thrust and speed limits
 Fx_max = B.dot(thrust_max * [1, 1, 1, 1])[0]
 Fy_max = B.dot(thrust_max * [1, -1, -1, 1])[1]
 Mz_max = B.dot(thrust_max * [-1, 1, -1, 1])[2]
 D_pos = np.abs([Fx_max, Fy_max, Mz_max] / velmax_pos)
 D_neg = np.abs([Fx_max, Fy_max, Mz_max] / velmax_neg)
 
-#################################################
+################################################# GEOMETRY
 
 # Boat shape
 boat_length = 210 * 0.0254  # m
@@ -88,23 +87,7 @@ for i in range(len(vps)):
 	vps[i] = [vps_grid_x[i], vps_grid_y[i]]
 vps = vps.T
 
-#################################################
-
-def erf(xgoal, x):
-	"""
-	Returns error e given two states xgoal and x.
-	Angle differences are taken properly on SO3.
-
-	"""
-	e = xgoal - x
-	c = np.cos(x[2])
-	s = np.sin(x[2])
-	cg = np.cos(xgoal[2])
-	sg = np.sin(xgoal[2])
-	e[2] = np.arctan2(sg*c - cg*s, cg*c + sg*s)
-	return e
-
-#################################################
+################################################# MISC
 
 def unset(*args):
 	raise AttributeError("This function has not been set yet!")

@@ -1,5 +1,5 @@
 """
-Constructs a planner that is good for translating!
+Constructs a planner that is good for being like a particle! Holds heading.
 
 """
 from __future__ import division
@@ -36,12 +36,14 @@ def dynamics(x, u, dt):
 	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
 
 	# First-order integrate
-	return x + xdot*dt
+	xnext = x + xdot*dt
+
+	return xnext
 
 ################################################# POLICY
 
-kp = np.diag([120, 120, 0])
-kd = np.diag([120, 120, 0])
+kp = np.diag([150, 150, 0])
+kd = np.diag([150, 150, 0])
 S = np.diag([1, 1, 0, 1, 1, 0])
 
 def lqr(x, u):
@@ -59,10 +61,7 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_bias = [0.5, 0.5, 0, 0, 0, 0]
-FPR = 0.3
-
-goal_buffer = [0.05, 0.05, np.inf, np.inf, np.inf, np.inf]
+goal_buffer = [real_tol[0], real_tol[1], np.inf, np.inf, np.inf, np.inf]
 error_tol = np.copy(goal_buffer)
 
 def gen_ss(seed, goal):
@@ -72,20 +71,18 @@ def gen_ss(seed, goal):
 	"""
 	return [(min([seed[0], goal[0]]) - ss_buff, max([seed[0], goal[0]]) + ss_buff),
 			(min([seed[1], goal[1]]) - ss_buff, max([seed[1], goal[1]]) + ss_buff),
-			(0, 0),
+			(-np.pi, np.pi),
 			(-abs(velmax_neg_plan[0]), velmax_pos_plan[0]),
 			(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
 			(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
 
 ################################################# MAIN ATTRIBUTES
 
-min_time = 3  # s
-
 constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
 								goal_buffer=goal_buffer, is_feasible=unset)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
 						horizon=horizon, dt=dt, FPR=FPR,
-						error_tol=error_tol, erf=erf,
-						min_time=min_time, max_time=min_time, max_nodes=max_nodes,
-						system_time=unset)
+						error_tol=error_tol, erf=unset,
+						min_time=basic_duration, max_time=basic_duration, max_nodes=max_nodes,
+						sys_time=unset, printing=False)

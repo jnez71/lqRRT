@@ -11,6 +11,9 @@ import lqrrt
 
 ################################################# DYNAMICS
 
+magic_rudder = 6000
+look_at = None
+
 def dynamics(x, u, dt):
 	"""
 	Returns next state given last state x, wrench u, and timestep dt.
@@ -29,6 +32,16 @@ def dynamics(x, u, dt):
 		if v >= 0:
 			D[i] = D_pos[i]
 
+	# Heading controller for staring at some look_at point
+	if look_at is not None:
+		vec = look_at - x[:2]
+		ang = np.arctan2(vec[1], vec[0])
+		c = np.cos(x[2])
+		s = np.sin(x[2])
+		cg = np.cos(ang)
+		sg = np.sin(ang)
+		u[2] = magic_rudder*np.arctan2(sg*c - cg*s, cg*c + sg*s)
+
 	# Actuator saturation
 	u = B.dot(np.clip(invB.dot(u), -thrust_max, thrust_max))
 
@@ -36,12 +49,14 @@ def dynamics(x, u, dt):
 	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
 
 	# First-order integrate
-	return x + xdot*dt
+	xnext = x + xdot*dt
+
+	return xnext
 
 ################################################# POLICY
 
-kp = np.diag([120, 120, 350])
-kd = np.diag([120, 120, 50])
+kp = np.diag([150, 150, 400])
+kd = np.diag([150, 150, 100])
 S = np.diag([1, 1, 1, 1, 1, 1])
 
 def lqr(x, u):
@@ -59,34 +74,28 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_bias = [0.2, 0.2, 0, 0, 0, 0]
-FPR = 0.9
+goal_buffer = [free_radius, free_radius, np.inf, np.inf, np.inf, np.inf]
+error_tol = np.copy(goal_buffer)
 
-goal_buffer = [boat_length, boat_length, np.inf, np.inf, np.inf, np.inf]
-error_tol = np.copy(goal_buffer)/10
-
-span = 60  # m
 def gen_ss(seed, goal):
 	"""
 	Returns a sample space given a seed state and goal state.
 
 	"""
-	return [(seed[0]-span, seed[0]+span),
-			(seed[1]-span, seed[1]+span),
+	return [(min([seed[0], goal[0]]) - ss_buff, max([seed[0], goal[0]]) + ss_buff),
+			(min([seed[1], goal[1]]) - ss_buff, max([seed[1], goal[1]]) + ss_buff),
 			(-np.pi, np.pi),
-			(-velmax_neg_plan[0], velmax_pos_plan[0]),
-			(-velmax_neg_plan[1], velmax_pos_plan[1]),
-			(-velmax_neg_plan[2], velmax_pos_plan[2])]
+			(-abs(velmax_neg_plan[0]), velmax_pos_plan[0]),
+			(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
+			(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
 
 ################################################# MAIN ATTRIBUTES
-
-min_time = 5  # s
 
 constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
 								goal_buffer=goal_buffer, is_feasible=unset)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
 						horizon=horizon, dt=dt, FPR=FPR,
-						error_tol=error_tol, erf=erf,
-						min_time=min_time, max_time=min_time, max_nodes=max_nodes,
-						system_time=unset)
+						error_tol=error_tol, erf=unset,
+						min_time=basic_duration, max_time=basic_duration, max_nodes=max_nodes,
+						sys_time=unset, printing=False)

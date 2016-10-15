@@ -1,0 +1,27 @@
+# Goal
+
+geometry_msgs/Pose goal
+
+std_msgs/String move_type  # 'hold', 'drive', 'skid', 'circle'
+
+geometry_msgs/Point focus
+
+
+
+---
+# Result
+
+std_msgs/String failure_reason
+
+
+
+---
+# Feedback
+
+std_msgs/String behavior
+
+std_msgs/Int64 tree_size
+
+std_msgs/Bool tracking
+
+std_msgs/Float64 time_till_next_branch

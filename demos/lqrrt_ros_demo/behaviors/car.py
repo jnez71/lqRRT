@@ -1,6 +1,5 @@
 """
-Constructs a planner that does basic c-infinity moves!
-Good for turning in place, taking straight paths, and holding.
+Constructs a planner that is good for being kinda like a car-boat thing!
 
 """
 from __future__ import division
@@ -11,6 +10,8 @@ from params import *
 import lqrrt
 
 ################################################# DYNAMICS
+
+magic_rudder = 6000
 
 def dynamics(x, u, dt):
 	"""
@@ -30,6 +31,15 @@ def dynamics(x, u, dt):
 		if v >= 0:
 			D[i] = D_pos[i]
 
+	# Heading controller trying to keep us car-like
+	vw = R[:2, :2].dot(x[3:5])
+	ang = np.arctan2(vw[1], vw[0])
+	c = np.cos(x[2])
+	s = np.sin(x[2])
+	cg = np.cos(ang)
+	sg = np.sin(ang)
+	u[2] = u[2] + magic_rudder*np.arctan2(sg*c - cg*s, cg*c + sg*s)
+
 	# Actuator saturation
 	u = B.dot(np.clip(invB.dot(u), -thrust_max, thrust_max))
 
@@ -37,13 +47,22 @@ def dynamics(x, u, dt):
 	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
 
 	# First-order integrate
-	return x + xdot*dt
+	xnext = x + xdot*dt
+
+	# Impose not driving backwards
+	if xnext[3] < 0:
+		xnext[3] = abs(x[3])
+
+	# # Impose not turning in place
+	# xnext[5] = np.clip(np.abs(xnext[3]/velmax_pos[0]), 0, 1) * xnext[5]
+
+	return xnext
 
 ################################################# POLICY
 
-kp = np.diag([150, 150, 350])
-kd = np.diag([150, 150, 50])
-S = np.diag([1, 1, 1, 1, 1, 1])
+kp = np.diag([150, 150, 0])
+kd = np.diag([150,   5, 0])
+S = np.diag([1, 1, 1, 0, 0, 0])
 
 def lqr(x, u):
 	"""
@@ -60,33 +79,28 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_bias = 1
-FPR = 0.9
-
-goal_buffer = [0.05, 0.05, np.deg2rad(3), 0.05, 0.05, np.deg2rad(3)]
-error_tol = np.copy(goal_buffer)
+goal_buffer = [free_radius, free_radius, np.inf, np.inf, np.inf, np.inf]
+error_tol = np.copy(goal_buffer)/10
 
 def gen_ss(seed, goal):
 	"""
 	Returns a sample space given a seed state and goal state.
 
 	"""
-	return [(seed[0], goal[0]),
-			(seed[1], goal[1]),
+	return [(min([seed[0], goal[0]]) - ss_buff, max([seed[0], goal[0]]) + ss_buff),
+			(min([seed[1], goal[1]]) - ss_buff, max([seed[1], goal[1]]) + ss_buff),
 			(-np.pi, np.pi),
-			(-velmax_neg_plan[0], velmax_pos_plan[0]),
-			(-velmax_neg_plan[1], velmax_pos_plan[1]),
-			(-velmax_neg_plan[2], velmax_pos_plan[2])]
+			(0.9*velmax_pos_plan[0], velmax_pos_plan[0]),
+			(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
+			(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
 
 ################################################# MAIN ATTRIBUTES
-
-min_time = 0.1  # s
 
 constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
 								goal_buffer=goal_buffer, is_feasible=unset)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
 						horizon=horizon, dt=dt, FPR=FPR,
-						error_tol=error_tol, erf=erf,
-						min_time=min_time, max_time=min_time, max_nodes=max_nodes,
-						system_time=unset)
+						error_tol=error_tol, erf=unset,
+						min_time=basic_duration, max_time=basic_duration, max_nodes=max_nodes,
+						sys_time=unset, printing=False)

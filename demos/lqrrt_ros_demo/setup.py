@@ -3,11 +3,12 @@
 from distutils.core import setup
 from catkin_pkg.python_setup import generate_distutils_setup
 
-# fetch values from package.xml
+# Fetch values from package.xml
 setup_args = generate_distutils_setup(
-    packages=['lqrrt_ros_demo'],
-    package_dir={'': 'src'},
-    requires=[],
+    packages=['lqrrt_ros_demo', 'behaviors']
+    #package_dir={'': 'src'},
+    #requires=[],
 )
 
 setup(**setup_args)
+
