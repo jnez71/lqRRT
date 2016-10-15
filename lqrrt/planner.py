@@ -72,8 +72,8 @@ class Planner:
 		   cannot be run. Use set_goal to set the goal at any time.
 		   Be sure to update the plan after setting a new goal.
 
-	system_time: Function that returns the real-world system time.
-				 Defaults to the Python time library's time().
+	sys_time: Function that returns the real-world system time.
+			  Defaults to the Python time library's time().
 
 	printing: Bool that specifies if internal stuff should be printed.
 
@@ -82,17 +82,15 @@ class Planner:
 				 horizon, dt=0.05, FPR=0, CPF=2,
 				 error_tol=0.05, erf=np.subtract,
 				 min_time=0.5, max_time=1, max_nodes=1E5,
-				 goal0=None, system_time=time.time, printing=True):
+				 goal0=None, sys_time=time.time, printing=True):
 
 		self.set_system(dynamics, lqr, constraints, erf)
 		
 		self.set_resolution(horizon, dt, FPR, CPF, error_tol)
 
-		self.set_runtime(min_time, max_time, max_nodes)
+		self.set_runtime(min_time, max_time, max_nodes, sys_time)
 
 		self.set_goal(goal0)
-
-		self.set_system_time(system_time)
 
 		self.printing = printing
 		self.killed = False
@@ -214,7 +212,7 @@ class Planner:
 		self.plan_reached_goal = False
 		self.T = np.inf
 		time_elapsed = 0
-		time_start = self.systime()
+		time_start = self.sys_time()
 
 		# Planning loop!
 		while True:
@@ -259,7 +257,7 @@ class Planner:
 							print("Found plan at elapsed time: {} s".format(np.round(time_elapsed, 6)))
 
 			# Check if we should stop planning
-			time_elapsed = self.systime() - time_start
+			time_elapsed = self.sys_time() - time_start
 
 			# Success
 			if self.plan_reached_goal and time_elapsed >= min_time:
@@ -366,7 +364,7 @@ class Planner:
 		
 		# Management
 		i = 0; elapsed_time = 0
-		start_time = self.systime()
+		start_time = self.sys_time()
 		
 		# Simulate
 		while True:
@@ -388,7 +386,7 @@ class Planner:
 			if force_arrive:
 
 				# Physical time limit
-				elapsed_time = self.systime() - start_time
+				elapsed_time = self.sys_time() - start_time
 				if elapsed_time > np.clip(self.min_time/2, 0.1, np.inf):
 					if self.printing:
 						print("(exact goal-convergence timed-out)")
@@ -477,7 +475,7 @@ class Planner:
 
 #################################################
 
-	def set_runtime(self, min_time=None, max_time=None, max_nodes=None):
+	def set_runtime(self, min_time=None, max_time=None, max_nodes=None, sys_time=None):
 		"""
 		See class docstring for argument definitions.
 		Arguments not given are not modified.
@@ -494,6 +492,12 @@ class Planner:
 
 		if max_nodes is not None:
 			self.max_nodes = max_nodes
+
+		if sys_time is not None:
+			if hasattr(sys_time, '__call__'):
+				self.sys_time = sys_time
+			else:
+				raise ValueError("Expected sys_time to be a function.")
 
 #################################################
 
@@ -564,18 +568,6 @@ class Planner:
 				raise ValueError("Expected erf to be a function.")
 
 		self.plan_reached_goal = False
-
-#################################################
-
-	def set_system_time(self, system_time):
-		"""
-		Sets the system time function, which gets called when the current physical time is needed.
-
-		"""
-		if hasattr(system_time, '__call__'):
-			self.systime = system_time
-		else:
-			raise ValueError("Expected system_time to be a function.")
 
 #################################################
 
