@@ -38,7 +38,7 @@ def dynamics(x, u, dt):
 	s = np.sin(x[2])
 	cg = np.cos(ang)
 	sg = np.sin(ang)
-	u[2] = u[2] + magic_rudder*np.arctan2(sg*c - cg*s, cg*c + sg*s)
+	u[2] = magic_rudder*np.arctan2(sg*c - cg*s, cg*c + sg*s)
 
 	# Actuator saturation
 	u = B.dot(np.clip(invB.dot(u), -thrust_max, thrust_max))
@@ -61,7 +61,7 @@ def dynamics(x, u, dt):
 ################################################# POLICY
 
 kp = np.diag([150, 150, 0])
-kd = np.diag([150,   5, 0])
+kd = np.diag([150,   1, 0])
 S = np.diag([1, 1, 1, 0, 0, 0])
 
 def lqr(x, u):
@@ -79,7 +79,7 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_buffer = [free_radius, free_radius, np.inf, np.inf, np.inf, np.inf]
+goal_buffer = [0.5*free_radius, 0.5*free_radius, np.inf, np.inf, np.inf, np.inf]
 error_tol = np.copy(goal_buffer)/10
 
 def gen_ss(seed, goal):
