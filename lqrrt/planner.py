@@ -193,19 +193,6 @@ class Planner:
 			if not hasattr(xrand_gen, '__call__'):
 				raise ValueError("Expected xrand_gen to be None or a function.")
 
-		# If we are in the goal already, just get to the center
-		if self._in_goal(x0):
-			# print("\n...planning to goal center...\n")
-			self.plan_reached_goal = True
-			self.x_seq, self.u_seq = self._steer(0, self.goal, force_arrive=finish_on_goal)
-			self.x_seq.append(self.goal)
-			self.u_seq.append(np.zeros(self.ncontrols))
-			self.t_seq = np.arange(len(self.x_seq)) * self.dt
-			self.T = self.t_seq[-1] + self.dt
-			self.node_seq = self.tree.climb(self.tree.size-1)
-			self._prepare_interpolators()
-			return True
-
 		# Loop managers
 		if self.printing:
 			print("\n...planning...")
