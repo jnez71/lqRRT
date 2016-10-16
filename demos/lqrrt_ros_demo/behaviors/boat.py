@@ -34,7 +34,7 @@ def dynamics(x, u, dt):
 
 	# Heading controller for staring at some focus point
 	if focus is not None:
-		vec = focus - x[:2]
+		vec = focus[:2] - x[:2]
 		ang = np.arctan2(vec[1], vec[0])
 		c = np.cos(x[2])
 		s = np.sin(x[2])
@@ -55,8 +55,8 @@ def dynamics(x, u, dt):
 
 ################################################# POLICY
 
-kp = np.diag([150, 150, 400])
-kd = np.diag([150, 150, 100])
+kp = np.diag([150, 150, 1000])
+kd = np.diag([150, 150, 1])
 S = np.diag([1, 1, 1, 1, 1, 1])
 
 def lqr(x, u):

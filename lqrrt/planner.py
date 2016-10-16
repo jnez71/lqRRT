@@ -197,7 +197,7 @@ class Planner:
 		if self._in_goal(x0):
 			# print("\n...planning to goal center...\n")
 			self.plan_reached_goal = True
-			self.x_seq, self.u_seq = self._steer(0, self.goal, force_arrive=True)
+			self.x_seq, self.u_seq = self._steer(0, self.goal, force_arrive=finish_on_goal)
 			self.x_seq.append(self.goal)
 			self.u_seq.append(np.zeros(self.ncontrols))
 			self.t_seq = np.arange(len(self.x_seq)) * self.dt
