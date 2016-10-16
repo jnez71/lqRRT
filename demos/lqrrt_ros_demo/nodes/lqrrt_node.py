@@ -66,7 +66,7 @@ class LQRRT_Node(object):
 		# Actions
 		self.move_server = actionlib.SimpleActionServer(move_topic, MoveAction, execute_cb=self.move_cb, auto_start=False)
 		self.move_server.start()
-		rospy.sleep(0.5)
+		rospy.sleep(1)
 
 		# Timers
 		rospy.Timer(rospy.Duration(self.revisit_period), self.publish_ref)
@@ -221,11 +221,11 @@ class LQRRT_Node(object):
 			self.tree_chain()
 
 			# Print feedback
-			if self.tree.size > 1:
+			if self.tree.size > 1 and not self.preempted:
 				print("\nMove {}\n----".format(move_number))
 				print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
 				print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
-				print("Goal bias: {}".format(self.goal_bias))
+				print("Goal bias: {}".format(np.round(self.goal_bias, 3)))
 				print("Tree size: {}".format(self.tree.size))
 				print("Move duration: {}".format(np.round(self.next_runtime, 1)))
 			move_number += 1
@@ -236,6 +236,7 @@ class LQRRT_Node(object):
 
 			# Check for abrupt termination
 			if self.preempted:
+				print("\nTerminated.")
 				self.done = True
 				return False
 
@@ -283,7 +284,7 @@ class LQRRT_Node(object):
 
 		# (debug)
 		if self.next_runtime == None:
-			assert self.stuck and self.time_till_issue is None
+			assert self.stuck and self.time_till_issue is None and self.behavior is escape and self.goal_bias == 0
 
 		# Update plan
 		clean_update = self.behavior.planner.update_plan(x0=self.next_seed,
@@ -293,11 +294,13 @@ class LQRRT_Node(object):
 
 		# Cash-in new goods
 		if clean_update:
-			# if self.behavior.planner.tree.size == 1 and self.next_runtime > params.basic_duration:
-			#     print("I think we're stuck...hm")
-			#     self.stuck = True
-			# else:
-			#     self.stuck = False #<<<
+			if self.behavior.planner.tree.size == 1 and \
+			   not self.behavior.planner.plan_reached_goal and \
+			   npl.norm(self.goal[:2] - self.state[:2]) > params.free_radius:
+				print("\nI think we're stuck...")
+				self.stuck = True
+			else:
+				self.stuck = False
 			self.enroute_behavior = self.behavior
 			self.x_seq = np.copy(self.behavior.planner.x_seq)
 			self.u_seq = np.copy(self.behavior.planner.u_seq)
@@ -307,8 +310,6 @@ class LQRRT_Node(object):
 			self.next_runtime = self.fudge_factor * self.behavior.planner.T
 			self.next_seed = self.get_ref(self.next_runtime)
 			self.time_till_issue = None
-		else:
-			self.stuck = False
 
 		# Make sure all planners are actually unkilled
 		for behavior in self.behaviors_list:
@@ -357,17 +358,38 @@ class LQRRT_Node(object):
 		Chooses the goal bias for a given move.
 
 		"""
-		#<<< use ogrid
-
-		if self.behavior is boat:
-			if boat.focus is None:
-				return [0.5, 0.5, 1, 0, 0, 1]
-			else:
-				return [0.5, 0.5, 0, 0, 0, 0]
-		elif self.behavior is car:
-			return [0.5, 0.5, 0, 0, 0, 0]
-		elif self.behavior is escape:
+		# Escaping means maximal exploration
+		if self.behavior is escape:
 			return 0
+
+		# Use ogrid to find good bias
+		if self.ogrid is not None and self.next_seed is not None:
+			xline = np.arange(self.next_seed[0], self.goal[0], params.vps_spacing)
+			yline = np.linspace(self.next_seed[1], self.goal[1], len(xline))
+			sline = np.vstack((xline, yline, np.zeros((4, len(xline))))).T
+			frees = 0; total = 0
+			for x in sline:
+				if self.is_feasible(x, np.zeros(3)):
+					frees += 1
+				total += 1
+			if total != 0:
+				b = np.clip(frees / total, 0.2, 0.9)
+			else:
+				b = 1
+		else:
+			b = 1
+
+		# For boating, no focus means hold goal orientation
+		if self.behavior is boat:
+			if npl.norm(self.goal[:2] - self.next_seed[:2]) < params.free_radius:
+				return [1, 1, 1, 0.2, 0.2, 0.2]
+			else:
+				return [b, b, 1, 0, 0, 1]
+
+		# For car-ing, just don't bias too much
+		if self.behavior is car:
+			b = np.clip(b, 0, 0.75)
+			return [b, b, 0, 0, 0, 0]
 
 		# (debug)
 		raise ValueError("Indeterminant behavior configuration.")
@@ -440,7 +462,7 @@ class LQRRT_Node(object):
 		# If we are escaping, check if we have a clear path again
 		if self.enroute_behavior is escape:
 			start = self.get_ref(self.rostime() - self.last_update_time)
-			xline = np.arange(start[0], self.goal[0], params.boat_width/2)
+			xline = np.arange(start[0], self.goal[0], params.vps_spacing)
 			yline = np.linspace(start[1], self.goal[1], len(xline))
 			sline = np.vstack((xline, yline, np.zeros((4, len(xline))))).T
 			checks = []
@@ -448,7 +470,7 @@ class LQRRT_Node(object):
 				checks.append(self.is_feasible(x, np.zeros(3)))
 			if np.all(checks):
 				print("Done escaping!")
-				self.time_till_issue = params.basic_duration
+				self.time_till_issue = 2.01*params.basic_duration
 				self.behavior.planner.kill_update()
 				return
 
