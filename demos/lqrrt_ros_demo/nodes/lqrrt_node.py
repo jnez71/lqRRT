@@ -16,7 +16,7 @@ import rospy
 import actionlib
 import tf.transformations as trns
 
-from geometry_msgs.msg import Pose, PoseArray, PoseStamped
+from geometry_msgs.msg import PointStamped, Pose, PoseArray, PoseStamped
 from nav_msgs.msg import Odometry, OccupancyGrid
 
 from behaviors import params, car, boat, escape
@@ -26,8 +26,8 @@ from lqrrt_ros_demo.msg import MoveAction, MoveFeedback, MoveResult
 
 class LQRRT_Node(object):
 
-	def __init__(self, odom_topic='/odom', ogrid_topic='/ogrid', ref_topic='/ref',
-				 move_topic='/move_to', path_topic='/path', tree_topic='/tree'):
+	def __init__(self, odom_topic='/odom', ogrid_topic='/ogrid', ref_topic='/lqrrt/ref',
+				 move_topic='/move_to', path_topic='/lqrrt/path', tree_topic='/lqrrt/tree'):
 		"""
 		Initialize with topic names.
 
@@ -62,6 +62,7 @@ class LQRRT_Node(object):
 		self.path_pub = rospy.Publisher(path_topic, PoseArray, queue_size=3)
 		self.tree_pub = rospy.Publisher(tree_topic, PoseArray, queue_size=3)
 		self.goal_pub = rospy.Publisher('/lqrrt/goal', PoseStamped, queue_size=3)
+		self.focus_pub = rospy.Publisher('/lqrrt/focus', PointStamped, queue_size=3)
 
 		# Actions
 		self.move_server = actionlib.SimpleActionServer(move_topic, MoveAction, execute_cb=self.move_cb, auto_start=False)
@@ -91,6 +92,7 @@ class LQRRT_Node(object):
 		self.enroute_behavior = None
 		self.goal_bias = None
 		self.stuck = False
+		self.stuck_count = 0
 
 		# Planning control
 		self.last_update_time = None
@@ -142,21 +144,25 @@ class LQRRT_Node(object):
 		if self.move_type == 'skid':
 			if msg.focus.z == 0:
 				boat.focus = None
+				self.focus_pub.publish(self.pack_pointstamped([1E6, 1E6, 1E6], rospy.Time.now()))
 			else:
 				boat.focus = np.array([msg.focus.x, msg.focus.y, 0])
 				focus_vec = boat.focus[:2] - self.goal[:2]
 				focus_goal = np.copy(self.goal)
 				focus_goal[2] = np.arctan2(focus_vec[1], focus_vec[0])
 				self.set_goal(focus_goal)
+				self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
 				print("Focused on: {}".format(boat.focus[:2]))
 		elif self.move_type == 'circle':
 			boat.focus = np.array([msg.focus.x, msg.focus.y, msg.focus.z])
+			self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
 			if boat.focus[2] >= 0:
 				print("Focused on: {}, counterclockwise".format(boat.focus[:2]))
 			else:
 				print("Focused on: {}, clockwise".format(boat.focus[:2]))
 		else:
 			boat.focus = None
+			self.focus_pub.publish(self.pack_pointstamped([1E6, 1E6, 1E6], rospy.Time.now()))
 
 		# Station keeping
 		if self.move_type == 'hold':
@@ -182,8 +188,8 @@ class LQRRT_Node(object):
 			p_err = self.goal[:2] - self.state[:2]
 			h_goal = np.arctan2(p_err[1], p_err[0])
 
-			# If we aren't within a cone of that heading, construct rotation
-			if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol:
+			# If we aren't within a cone of that heading and the goal is far away, construct rotation
+			if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol and npl.norm(p_err) > params.free_radius:
 				dt_rot = np.clip(params.dt, 1E-6, 0.01)
 				x_seq_rot, T_rot, rot_success = self.rotation_move(self.state, h_goal, params.pointshoot_tol, dt_rot)
 				print("Rotating towards goal (duration: {})".format(np.round(T_rot, 2)))
@@ -199,7 +205,7 @@ class LQRRT_Node(object):
 										assume_sorted=True, bounds_error=False, fill_value=x_seq_rot[-1][:])
 
 				# Start tree-chaining with the end of the rotation move
-				self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos_plan[2])
+				self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos[2])
 				self.next_seed = np.copy(x_seq_rot[-1])
 
 			else:
@@ -221,11 +227,11 @@ class LQRRT_Node(object):
 			self.tree_chain()
 
 			# Print feedback
-			if self.tree.size > 1 and not self.preempted:
+			if not self.preempted:
 				print("\nMove {}\n----".format(move_number))
 				print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
 				print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
-				print("Goal bias: {}".format(np.round(self.goal_bias, 3)))
+				print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
 				print("Tree size: {}".format(self.tree.size))
 				print("Move duration: {}".format(np.round(self.next_runtime, 1)))
 			move_number += 1
@@ -267,6 +273,9 @@ class LQRRT_Node(object):
 		if self.time_till_issue is None:
 			self.behavior = self.select_behavior()
 			self.goal_bias = self.select_bias()
+			if self.next_runtime < params.basic_duration and self.last_update_time is not None and not self.stuck:
+				self.next_runtime = params.basic_duration
+				self.next_seed = self.get_ref(self.next_runtime + self.rostime() - self.last_update_time)
 
 		# Distant issue
 		elif self.time_till_issue > 2*params.basic_duration:
@@ -292,24 +301,43 @@ class LQRRT_Node(object):
 														 goal_bias=self.goal_bias,
 														 specific_time=self.next_runtime)
 
-		# Cash-in new goods
+		# Update finished properly
 		if clean_update:
-			if self.behavior.planner.tree.size == 1 and \
+
+			# We might be stuck if tree is oddly small
+			if self.behavior.planner.tree.size <= params.stuck_threshold and \
 			   not self.behavior.planner.plan_reached_goal and \
 			   npl.norm(self.goal[:2] - self.state[:2]) > params.free_radius:
-				print("\nI think we're stuck...")
-				self.stuck = True
+
+				# Increase stuck count towards threshold
+				self.stuck_count += 1
+				if self.stuck_count > params.stuck_threshold:
+					print("\nI think we're stuck...")
+					self.stuck = True
+					self.stuck_count = 0
 			else:
 				self.stuck = False
+				self.stuck_count = 0
+
+			# Cash-in new goods
 			self.enroute_behavior = self.behavior
 			self.x_seq = np.copy(self.behavior.planner.x_seq)
 			self.u_seq = np.copy(self.behavior.planner.u_seq)
 			self.tree = self.behavior.planner.tree
 			self.last_update_time = self.rostime()
 			self.get_ref = self.behavior.planner.get_state
-			self.next_runtime = self.fudge_factor * self.behavior.planner.T
+			self.next_runtime = self.behavior.planner.T
+			if self.next_runtime > params.basic_duration:
+				self.next_runtime *= self.fudge_factor
 			self.next_seed = self.get_ref(self.next_runtime)
 			self.time_till_issue = None
+
+			# Visualizers
+			self.publish_tree()
+			self.publish_path()
+
+		else:
+			print("Update cancelled.")
 
 		# Make sure all planners are actually unkilled
 		for behavior in self.behaviors_list:
@@ -317,10 +345,6 @@ class LQRRT_Node(object):
 
 		# Unlocking, lol
 		self.busy = False
-
-		# Visualizers
-		self.publish_tree()
-		self.publish_path()
 
 ################################################# DECISIONS
 
@@ -382,14 +406,14 @@ class LQRRT_Node(object):
 		# For boating, no focus means hold goal orientation
 		if self.behavior is boat:
 			if npl.norm(self.goal[:2] - self.next_seed[:2]) < params.free_radius:
-				return [1, 1, 1, 0.2, 0.2, 0.2]
+				return [1, 1, 1, 0.1, 0.1, 0]
 			else:
 				return [b, b, 1, 0, 0, 1]
 
 		# For car-ing, just don't bias too much
 		if self.behavior is car:
-			b = np.clip(b, 0, 0.75)
-			return [b, b, 0, 0, 0, 0]
+			bc = np.clip(b, 0, 0.75)
+			return [bc, bc, 0, 0, 0.5, 0]
 
 		# (debug)
 		raise ValueError("Indeterminant behavior configuration.")
@@ -402,11 +426,6 @@ class LQRRT_Node(object):
 		that is only True if that (x, u) is feasible.
 
 		"""
-		# Reject going too fast
-		for i, v in enumerate(x[3:]):
-			if v > params.velmax_pos_plan[i] or v < params.velmax_neg_plan[i]:
-				return False
-
 		# If there's no ogrid yet, anywhere is valid
 		if self.ogrid is None:
 			return True
@@ -455,8 +474,9 @@ class LQRRT_Node(object):
 			for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
 				if not self.is_feasible(x, u):
 					self.time_till_issue = i*params.dt
-					self.behavior.planner.kill_update()
-					print("Found collision on current path!\nTime till collision: {}".format(self.time_till_issue))
+					for behavior in self.behaviors_list:
+						behavior.planner.kill_update()
+					print("\nFound collision on current path!\nTime till collision: {}".format(self.time_till_issue))
 					return
 
 		# If we are escaping, check if we have a clear path again
@@ -469,9 +489,12 @@ class LQRRT_Node(object):
 			for x in sline:
 				checks.append(self.is_feasible(x, np.zeros(3)))
 			if np.all(checks):
-				print("Done escaping!")
-				self.time_till_issue = 2.01*params.basic_duration
-				self.behavior.planner.kill_update()
+				self.time_till_issue = 1E2
+				for behavior in self.behaviors_list:
+					behavior.planner.kill_update()
+				self.stuck = False
+				self.stuck_count = 0
+				print("\nDone escaping!")
 				return
 
 		# No concerns
@@ -496,12 +519,12 @@ class LQRRT_Node(object):
 					behavior.planner.kill_update()
 				while not self.done:
 					rospy.sleep(0.1)
-			print("\n\n")
+			print("\n")
 			self.reset()
 
 		if self.enroute_behavior is not None and self.tree is not None and self.tracking is not None and \
 		   self.next_runtime is not None and self.last_update_time is not None:
-			self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__,
+			self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
 														   self.tree.size,
 														   self.tracking,
 														   self.next_runtime - (self.rostime() - self.last_update_time)))
@@ -734,6 +757,20 @@ class LQRRT_Node(object):
 		msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w = trns.quaternion_from_euler(0, 0, state[2])
 		msg.twist.twist.linear.x, msg.twist.twist.linear.y = state[3:5]
 		msg.twist.twist.angular.z = state[5]
+		return msg
+
+
+	def pack_pointstamped(self, point, stamp):
+		"""
+		Converts a point vector into a PointStamped
+		message with a given header timestamp.
+
+		"""
+		msg = PointStamped()
+		msg.header.stamp = stamp
+		msg.header.frame_id = self.world_frame_id
+		msg.point.x, msg.point.y = point[:2]
+		msg.point.z = 0
 		return msg
 
 ################################################# NODE
