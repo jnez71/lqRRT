@@ -42,15 +42,15 @@ thrust_max = np.array([220, 220, 220, 220])  # N, per thruster
 
 # Thruster layout, [back-left, back-right, front-left front-right] (m)
 thruster_positions = np.array([[-1.9000,  1.0000, -0.0123],
-							   [-1.9000, -1.0000, -0.0123],
-							   [ 1.6000,  0.6000, -0.0123],
-							   [ 1.6000, -0.6000, -0.0123]])
+                               [-1.9000, -1.0000, -0.0123],
+                               [ 1.6000,  0.6000, -0.0123],
+                               [ 1.6000, -0.6000, -0.0123]])
 
 # Thruster heading vectors, [back-left, back-right, front-left front-right] (m)
 thruster_directions = np.array([[ 0.7071,  0.7071,  0.0000],
-								[ 0.7071, -0.7071,  0.0000],
-								[ 0.7071, -0.7071,  0.0000],
-								[ 0.7071,  0.7071,  0.0000]])
+                                [ 0.7071, -0.7071,  0.0000],
+                                [ 0.7071, -0.7071,  0.0000],
+                                [ 0.7071,  0.7071,  0.0000]])
 
 # Fresh sprinkles
 thrust_levers = np.cross(thruster_positions, thruster_directions)
@@ -75,15 +75,15 @@ boat_buffer = 0.15  # m
 # Grid of points defining boat
 vps_spacing = 1.0  # m
 vps_grid_x, vps_grid_y = np.mgrid[slice(-(boat_length+boat_buffer)/2, (boat_length+boat_buffer)/2+vps_spacing, vps_spacing),
-								  slice(-(boat_width+boat_buffer)/2, (boat_width+boat_buffer)/2+vps_spacing, vps_spacing)]
+                                  slice(-(boat_width+boat_buffer)/2, (boat_width+boat_buffer)/2+vps_spacing, vps_spacing)]
 vps_grid_x = vps_grid_x.reshape(vps_grid_x.size)
 vps_grid_y = vps_grid_y.reshape(vps_grid_y.size)
 vps = np.zeros((vps_grid_x.size, 2))
 for i in range(len(vps)):
-	vps[i] = [vps_grid_x[i], vps_grid_y[i]]
+    vps[i] = [vps_grid_x[i], vps_grid_y[i]]
 vps = vps.T
 
 ################################################# MISC
 
 def unset(*args):
-	raise AttributeError("This function has not been set yet!")
+    raise AttributeError("This function has not been set yet!")

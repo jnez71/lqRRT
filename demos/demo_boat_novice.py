@@ -43,36 +43,36 @@ nstates = 6
 ncontrols = 3
 
 def dynamics(x, u, dt):
-	"""
-	Returns next state given last state x, wrench u, and timestep dt.
-	Simple holonomic boat-like dynamics.
+    """
+    Returns next state given last state x, wrench u, and timestep dt.
+    Simple holonomic boat-like dynamics.
 
-	"""
-	# Rotation matrix (orientation, converts body to world)
-	R = np.array([
-				  [np.cos(x[2]), -np.sin(x[2]), 0],
-				  [np.sin(x[2]),  np.cos(x[2]), 0],
-				  [           0,             0, 1]
-				])
+    """
+    # Rotation matrix (orientation, converts body to world)
+    R = np.array([
+                  [np.cos(x[2]), -np.sin(x[2]), 0],
+                  [np.sin(x[2]),  np.cos(x[2]), 0],
+                  [           0,             0, 1]
+                ])
 
-	# Construct drag coefficients based on our motion signs
-	D = np.zeros(3)
-	for i, v in enumerate(x[3:]):
-		if v >= 0:
-			D[i] = D_pos[i]
-		else:
-			D[i] = D_neg[i]
+    # Construct drag coefficients based on our motion signs
+    D = np.zeros(3)
+    for i, v in enumerate(x[3:]):
+        if v >= 0:
+            D[i] = D_pos[i]
+        else:
+            D[i] = D_neg[i]
 
-	# Actuator saturation
-	for i, mag in enumerate(np.abs(u)):
-		if mag > u_max[i]:
-			u[i] = u_max[i] * np.sign(u[i])
+    # Actuator saturation
+    for i, mag in enumerate(np.abs(u)):
+        if mag > u_max[i]:
+            u[i] = u_max[i] * np.sign(u[i])
 
-	# M*vdot + D*v = u  and  pdot = R*v
-	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
+    # M*vdot + D*v = u  and  pdot = R*v
+    xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
 
-	# First-order integrate
-	return x + xdot*dt
+    # First-order integrate
+    return x + xdot*dt
 
 ################################################# VEHICLE DIMENSIONS
 
@@ -87,35 +87,35 @@ kp = np.diag([120, 120, 350])
 kd = np.diag([120, 120, 100])
 
 def lqr(x, u):
-	"""
-	Returns cost-to-go matrix S and policy matrix K given local state x and effort u.
+    """
+    Returns cost-to-go matrix S and policy matrix K given local state x and effort u.
 
-	"""
-	R = np.array([
-				  [np.cos(x[2]), -np.sin(x[2]), 0],
-				  [np.sin(x[2]),  np.cos(x[2]), 0],
-				  [           0,             0, 1]
-				])
+    """
+    R = np.array([
+                  [np.cos(x[2]), -np.sin(x[2]), 0],
+                  [np.sin(x[2]),  np.cos(x[2]), 0],
+                  [           0,             0, 1]
+                ])
 
-	S = np.diag([1, 1, 1, 1, 1, 1])
-	K = np.hstack((kp.dot(R.T), kd))
+    S = np.diag([1, 1, 1, 1, 1, 1])
+    K = np.hstack((kp.dot(R.T), kd))
 
-	return (S, K)
+    return (S, K)
 
 
 def erf(xgoal, x):
-	"""
-	Returns error e given two states xgoal and x.
-	Angle differences are taken properly on SO3.
+    """
+    Returns error e given two states xgoal and x.
+    Angle differences are taken properly on SO3.
 
-	"""
-	e = xgoal - x
-	c = np.cos(x[2])
-	s = np.sin(x[2])
-	cg = np.cos(xgoal[2])
-	sg = np.sin(xgoal[2])
-	e[2] = np.arctan2(sg*c - cg*s, cg*c + sg*s)
-	return e
+    """
+    e = xgoal - x
+    c = np.cos(x[2])
+    s = np.sin(x[2])
+    cg = np.cos(xgoal[2])
+    sg = np.sin(xgoal[2])
+    e[2] = np.arctan2(sg*c - cg*s, cg*c + sg*s)
+    return e
 
 ################################################# OBJECTIVES
 
@@ -131,46 +131,46 @@ obs_choice = 'grid'
 
 # No obstacles
 if obs_choice == 'none':
-	obs = []
+    obs = []
 
 # Some obstacles [x, y, radius]
 elif obs_choice == 'some':
-	obs = np.array([[20, 20, 5],
-					[10, 30, 2],
-					[40, 10, 3]
-				  ])
+    obs = np.array([[20, 20, 5],
+                    [10, 30, 2],
+                    [40, 10, 3]
+                  ])
 
 # Noised grid of obstacles
 elif obs_choice == 'grid':
-	obs_spacing = 12  # m
-	obs_range = (5, 60)
-	obs_grid_x, obs_grid_y = np.mgrid[slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing),
-									  slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing)]
-	obs_grid_x = obs_grid_x.reshape(obs_grid_x.size)
-	obs_grid_y = obs_grid_y.reshape(obs_grid_y.size)
-	obs = [-9999*np.ones(3)] * obs_grid_x.size
-	for i in range(len(obs)):
-		p = np.round([obs_grid_x[i], obs_grid_y[i]] + 3*(np.random.rand(2)-0.5), 2)
-		if npl.norm(p - goal[:2]) > 2*boat_length and npl.norm(np.array(p - x0[:2])) > 2*boat_length:
-			obs[i] = np.concatenate((p, [1]))
+    obs_spacing = 12  # m
+    obs_range = (5, 60)
+    obs_grid_x, obs_grid_y = np.mgrid[slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing),
+                                      slice(obs_range[0], obs_range[1]+obs_spacing, obs_spacing)]
+    obs_grid_x = obs_grid_x.reshape(obs_grid_x.size)
+    obs_grid_y = obs_grid_y.reshape(obs_grid_y.size)
+    obs = [-9999*np.ones(3)] * obs_grid_x.size
+    for i in range(len(obs)):
+        p = np.round([obs_grid_x[i], obs_grid_y[i]] + 3*(np.random.rand(2)-0.5), 2)
+        if npl.norm(p - goal[:2]) > 2*boat_length and npl.norm(np.array(p - x0[:2])) > 2*boat_length:
+            obs[i] = np.concatenate((p, [1]))
 
 ####
 
 # Definition of collision
 def is_feasible(x, u):
-	for ob in obs:
-		if npl.norm(x[:2] - ob[:2]) <= boat_length/2 + ob[2]:
-			return False
-	return True
+    for ob in obs:
+        if npl.norm(x[:2] - ob[:2]) <= boat_length/2 + ob[2]:
+            return False
+    return True
 
 ################################################# HEURISTICS
 
 sample_space = [(x0[0], goal[0]),
-				(x0[1], goal[1]),
-				(-np.pi, np.pi),
-				(0.5*velmax_pos[0], velmax_pos[0]),
-				(-velmax_neg[1], velmax_pos[1]),
-				(-velmax_neg[2], velmax_pos[2])]
+                (x0[1], goal[1]),
+                (-np.pi, np.pi),
+                (0.5*velmax_pos[0], velmax_pos[0]),
+                (-velmax_neg[1], velmax_pos[1]),
+                (-velmax_neg[2], velmax_pos[2])]
 
 goal_bias = [0.5, 0.5, 0, 0, 0, 0]
 
@@ -179,16 +179,16 @@ xrand_gen = None
 ################################################# PLAN
 
 constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
-								goal_buffer=goal_buffer, is_feasible=is_feasible)
+                                goal_buffer=goal_buffer, is_feasible=is_feasible)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
-						horizon=2, dt=0.1, FPR=0.5,
-						error_tol=error_tol, erf=erf,
-						min_time=1, max_time=2, max_nodes=1E5,
-						goal0=goal)
+                        horizon=2, dt=0.1, FPR=0.5,
+                        error_tol=error_tol, erf=erf,
+                        min_time=1, max_time=2, max_nodes=1E5,
+                        goal0=goal)
 
 planner.update_plan(x0, sample_space, goal_bias=goal_bias,
-					xrand_gen=xrand_gen, finish_on_goal=True)
+                    xrand_gen=xrand_gen, finish_on_goal=True)
 
 ################################################# SIMULATION
 
@@ -208,21 +208,21 @@ u_history = np.zeros((len(t_arr), ncontrols))
 # Track plan
 for i, t in enumerate(t_arr):
 
-	# Planner's decision
-	xref = planner.get_state(t)
-	uref = planner.get_effort(t)
+    # Planner's decision
+    xref = planner.get_state(t)
+    uref = planner.get_effort(t)
 
-	# Controller's decision
-	u = 2*lqr(x, uref)[1].dot(erf(xref, np.copy(x)))
+    # Controller's decision
+    u = 2*lqr(x, uref)[1].dot(erf(xref, np.copy(x)))
 
-	# Record this instant
-	x_history[i, :] = x
-	xref_history[i, :] = xref
-	goal_history[i, :] = goal
-	u_history[i, :] = u
+    # Record this instant
+    x_history[i, :] = x
+    xref_history[i, :] = xref
+    goal_history[i, :] = goal
+    u_history[i, :] = u
 
-	# Step dynamics
-	x = dynamics(x, u, dt)
+    # Step dynamics
+    x = dynamics(x, u, dt)
 
 ################################################# VISUALIZATION
 
@@ -237,46 +237,46 @@ fig1.suptitle('Results', fontsize=20)
 ax1 = fig1.add_subplot(2, 4, 1)
 ax1.set_ylabel('X Position (m)', fontsize=16)
 ax1.plot(t_arr, x_history[:, 0], 'k',
-		 t_arr, goal_history[:, 0], 'g--')
+         t_arr, goal_history[:, 0], 'g--')
 ax1.grid(True)
 
 ax1 = fig1.add_subplot(2, 4, 2)
 ax1.set_ylabel('Y Position (m)', fontsize=16)
 ax1.plot(t_arr, x_history[:, 1], 'k',
-		 t_arr, goal_history[:, 1], 'g--')
+         t_arr, goal_history[:, 1], 'g--')
 ax1.grid(True)
 
 ax1 = fig1.add_subplot(2, 4, 3)
 ax1.set_ylabel('Heading (deg)', fontsize=16)
 ax1.plot(t_arr, np.rad2deg(x_history[:, 2]), 'k',
-		 t_arr, np.rad2deg(goal_history[:, 2]), 'g--')
+         t_arr, np.rad2deg(goal_history[:, 2]), 'g--')
 ax1.grid(True)
 
 ax1 = fig1.add_subplot(2, 4, 4)
 ax1.set_ylabel('Efforts (N, N*m)', fontsize=16)
 ax1.plot(t_arr, u_history[:, 0], 'b',
-		 t_arr, u_history[:, 1], 'g',
-		 t_arr, u_history[:, 2], 'r')
+         t_arr, u_history[:, 1], 'g',
+         t_arr, u_history[:, 2], 'r')
 ax1.grid(True)
 
 ax1 = fig1.add_subplot(2, 4, 5)
 ax1.set_ylabel('X Velocity (m/s)', fontsize=16)
 ax1.plot(t_arr, x_history[:, 3], 'k',
-		 t_arr, goal_history[:, 3], 'g--')
+         t_arr, goal_history[:, 3], 'g--')
 ax1.grid(True)
 ax1.set_xlabel('Time (s)')
 
 ax1 = fig1.add_subplot(2, 4, 6)
 ax1.set_ylabel('Y Velocity (m/s)', fontsize=16)
 ax1.plot(t_arr, x_history[:, 4], 'k',
-		 t_arr, goal_history[:, 4], 'g--')
+         t_arr, goal_history[:, 4], 'g--')
 ax1.grid(True)
 ax1.set_xlabel('Time (s)')
 
 ax1 = fig1.add_subplot(2, 4, 7)
 ax1.set_ylabel('Yaw Rate (deg/s)', fontsize=16)
 ax1.plot(t_arr, np.rad2deg(x_history[:, 5]), 'k',
-		 t_arr, np.rad2deg(goal_history[:, 5]), 'g--')
+         t_arr, np.rad2deg(goal_history[:, 5]), 'g--')
 ax1.grid(True)
 ax1.set_xlabel('Time (s)')
 
@@ -286,16 +286,16 @@ ax1.set_xlabel('- State {} +'.format(dx))
 ax1.set_ylabel('- State {} +'.format(dy))
 ax1.grid(True)
 for ID in xrange(planner.tree.size):
-	x_seq = np.array(planner.tree.x_seq[ID])
-	if ID in planner.node_seq:
-		ax1.plot((x_seq[:, dx]), (x_seq[:, dy]), color='r', zorder=2)
-	else:
-		ax1.plot((x_seq[:, dx]), (x_seq[:, dy]), color='0.75', zorder=1)
+    x_seq = np.array(planner.tree.x_seq[ID])
+    if ID in planner.node_seq:
+        ax1.plot((x_seq[:, dx]), (x_seq[:, dy]), color='r', zorder=2)
+    else:
+        ax1.plot((x_seq[:, dx]), (x_seq[:, dy]), color='0.75', zorder=1)
 ax1.scatter(planner.tree.state[0, dx], planner.tree.state[0, dy], color='b', s=48)
 ax1.scatter(planner.tree.state[planner.node_seq[-1], dx], planner.tree.state[planner.node_seq[-1], dy], color='r', s=48)
 ax1.scatter(goal[dx], goal[dy], color='g', s=48)
 for ob in obs:
-	ax1.add_patch(plt.Circle((ob[0], ob[1]), radius=ob[2], fc='r'))
+    ax1.add_patch(plt.Circle((ob[0], ob[1]), radius=ob[2], fc='r'))
 
 # print("\nClose the plot window to continue to animation.")
 # plt.show()
@@ -322,11 +322,11 @@ ax2.set_xlabel('- State {} +'.format(dx))
 ax2.set_ylabel('- State {} +'.format(dy))
 ax2.grid(True)
 for ID in xrange(planner.tree.size):
-	x_seq = np.array(planner.tree.x_seq[ID])
-	if ID in planner.node_seq:
-		ax2.plot((x_seq[:, dx]), (x_seq[:, dy]), color='r', zorder=2)
-	else:
-		ax2.plot((x_seq[:, dx]), (x_seq[:, dy]), color='0.75', zorder=1)
+    x_seq = np.array(planner.tree.x_seq[ID])
+    if ID in planner.node_seq:
+        ax2.plot((x_seq[:, dx]), (x_seq[:, dy]), color='r', zorder=2)
+    else:
+        ax2.plot((x_seq[:, dx]), (x_seq[:, dy]), color='0.75', zorder=1)
 ax2.scatter(planner.tree.state[0, dx], planner.tree.state[0, dy], color='b', s=48)
 ax2.scatter(planner.tree.state[planner.node_seq[-1], dx], planner.tree.state[planner.node_seq[-1], dy], color='r', s=48)
 
@@ -338,28 +338,28 @@ graphic_robot_3 = ax2.add_patch(plt.Circle(((x_history[0, 0]-td*np.cos(x_history
 llen = boat_length/2
 graphic_goal = ax2.add_patch(plt.Circle((goal_history[0, 0], goal_history[0, 1]), radius=npl.norm([goal_buffer[0], goal_buffer[1]]), color='g', alpha=0.1))
 graphic_goal_heading = ax2.plot([goal_history[0, 0] - 0.5*llen*np.cos(goal_history[0, 2]), goal_history[0, 0] + 0.5*llen*np.cos(goal_history[0, 2])],
-								[goal_history[0, 1] - 0.5*llen*np.sin(goal_history[0, 2]), goal_history[0, 1] + 0.5*llen*np.sin(goal_history[0, 2])], color='g', linewidth=5)
+                                [goal_history[0, 1] - 0.5*llen*np.sin(goal_history[0, 2]), goal_history[0, 1] + 0.5*llen*np.sin(goal_history[0, 2])], color='g', linewidth=5)
 
 for ob in obs:
-	ax2.add_patch(plt.Circle((ob[0], ob[1]), radius=ob[2], fc='r'))
+    ax2.add_patch(plt.Circle((ob[0], ob[1]), radius=ob[2], fc='r'))
 
 def ani_update(arg, ii=[0]):
 
-	i = ii[0]  # don't ask...
+    i = ii[0]  # don't ask...
 
-	if np.isclose(t_arr[i], np.around(t_arr[i], 1)):
-		fig2.suptitle('Evolution (Time: {})'.format(t_arr[i]), fontsize=24)
+    if np.isclose(t_arr[i], np.around(t_arr[i], 1)):
+        fig2.suptitle('Evolution (Time: {})'.format(t_arr[i]), fontsize=24)
 
-	graphic_robot_1.center = ((x_history[i, 0]+td*np.cos(x_history[i, 2]), x_history[i, 1]+td*np.sin(x_history[i, 2])))
-	graphic_robot_2.center = ((x_history[i, 0], x_history[i, 1]))
-	graphic_robot_3.center = ((x_history[i, 0]-td*np.cos(x_history[i, 2]), x_history[i, 1]-td*np.sin(x_history[i, 2])))
+    graphic_robot_1.center = ((x_history[i, 0]+td*np.cos(x_history[i, 2]), x_history[i, 1]+td*np.sin(x_history[i, 2])))
+    graphic_robot_2.center = ((x_history[i, 0], x_history[i, 1]))
+    graphic_robot_3.center = ((x_history[i, 0]-td*np.cos(x_history[i, 2]), x_history[i, 1]-td*np.sin(x_history[i, 2])))
 
-	ii[0] += int(1 / (dt * framerate))
-	if ii[0] >= len(t_arr):
-		print("Resetting animation!")
-		ii[0] = 0
+    ii[0] += int(1 / (dt * framerate))
+    if ii[0] >= len(t_arr):
+        print("Resetting animation!")
+        ii[0] = 0
 
-	return None
+    return None
 
 # Run animation
 print("\nStarting animation. \nBlack: robot \nRed: obstacles \nGreen: goal\n")
