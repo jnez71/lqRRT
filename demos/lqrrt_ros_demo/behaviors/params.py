@@ -12,10 +12,11 @@ ncontrols = 3
 
 ################################################# BEHAVIOR CONTROL
 
-real_tol = [1.5, 1.5, np.deg2rad(10), np.inf, np.inf, np.inf]
-pointshoot_tol = np.deg2rad(15)  # rad
+real_tol = [0.5, 0.5, np.deg2rad(10), np.inf, np.inf, np.inf]
+pointshoot_tol = np.deg2rad(10)  # rad
 basic_duration = 1  # s
 free_radius = 6  # m
+stuck_threshold = 2
 
 ################################################# TREE GROWTH
 
@@ -25,21 +26,16 @@ FPR = 0.5
 ss_buff = 10  # m
 max_nodes = 1E5
 
-################################################# PLAN SPEED LIMITS
-
-velmax_pos_plan = np.array([1.1, 0.4, 0.2])  # (m/s, m/s, rad/s), body-frame forward
-velmax_neg_plan = np.array([-0.7, -0.4, -0.2])  # (m/s, m/s, rad/s), body-frame backward
-
 ################################################# INERTIA
 
 m = 350  # kg
 I = 400  # kg*m^2
 invM = np.array([1/m, 1/m, 1/I])
 
-################################################# REAL SPEED AND THRUST LIMITS
+################################################# SPEED AND THRUST LIMITS
 
-velmax_pos = np.array([1.5, 0.6, 0.25])  # (m/s, m/s, rad/s), body-frame forward
-velmax_neg = np.array([-0.8, -0.6, -0.25])  # (m/s, m/s, rad/s), body-frame backward
+velmax_pos = np.array([1.2, 0.6, 0.22])  # (m/s, m/s, rad/s), body-frame forward
+velmax_neg = np.array([-0.6, -0.6, -0.22])  # (m/s, m/s, rad/s), body-frame backward
 thrust_max = np.array([220, 220, 220, 220])  # N, per thruster
 
 ################################################# THRUSTER CONFIGURATION

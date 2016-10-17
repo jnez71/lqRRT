@@ -61,7 +61,7 @@ def dynamics(x, u, dt):
 ################################################# POLICY
 
 kp = np.diag([150, 150, 0])
-kd = np.diag([150,   1, 0])
+kd = np.diag([150,   5, 0])
 S = np.diag([1, 1, 1, 0, 0, 0])
 
 def lqr(x, u):
@@ -90,9 +90,9 @@ def gen_ss(seed, goal):
 	return [(min([seed[0], goal[0]]) - ss_buff, max([seed[0], goal[0]]) + ss_buff),
 			(min([seed[1], goal[1]]) - ss_buff, max([seed[1], goal[1]]) + ss_buff),
 			(-np.pi, np.pi),
-			(0.9*velmax_pos_plan[0], velmax_pos_plan[0]),
-			(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
-			(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
+			(0.9*velmax_pos[0], velmax_pos[0]),
+			(-abs(velmax_neg[1]), velmax_pos[1]),
+			(-abs(velmax_neg[2]), velmax_pos[2])]
 
 ################################################# MAIN ATTRIBUTES
 

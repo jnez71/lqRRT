@@ -29,8 +29,11 @@ def dynamics(x, u, dt):
 		if v >= 0:
 			D[i] = D_pos[i]
 
-	# Actuator saturation
-	u = B.dot(np.clip(invB.dot(u), -thrust_max, thrust_max))
+	# Actuator saturation with even downscaling
+	thrusts = invB.dot(u)
+	ratios = thrust_max / np.clip(np.abs(thrusts), 1E-6, np.inf)
+	if np.any(ratios < 1):
+		u = B.dot(np.min(ratios) * thrusts)
 
 	# M*vdot + D*v = u  and  pdot = R*v
 	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
@@ -42,8 +45,8 @@ def dynamics(x, u, dt):
 
 ################################################# POLICY
 
-kp = np.diag([150, 150, 1000])
-kd = np.diag([150, 150, 1])
+kp = np.diag([150, 150, 2000])
+kd = np.diag([120, 120, 0.01])
 S = np.diag([1, 1, 1, 1, 1, 1])
 
 def lqr(x, u):
@@ -74,9 +77,9 @@ def gen_ss(seed, goal):
 	return [(seed[0] - sf*ss_buff, seed[0] + sf*ss_buff),
 			(seed[1] - sf*ss_buff, seed[1] + sf*ss_buff),
 			(-np.pi, np.pi),
-			(-abs(velmax_neg_plan[0]), velmax_pos_plan[0]),
-			(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
-			(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
+			(-abs(velmax_neg[0]), velmax_pos[0]),
+			(-abs(velmax_neg[1]), velmax_pos[1]),
+			(-abs(velmax_neg[2]), velmax_pos[2])]
 
 ################################################# MAIN ATTRIBUTES
 

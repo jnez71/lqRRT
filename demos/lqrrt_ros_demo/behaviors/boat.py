@@ -11,7 +11,7 @@ import lqrrt
 
 ################################################# DYNAMICS
 
-magic_rudder = 6000
+magic_rudder = 7000
 focus = None
 
 def dynamics(x, u, dt):
@@ -42,8 +42,11 @@ def dynamics(x, u, dt):
 		sg = np.sin(ang)
 		u[2] = magic_rudder*np.arctan2(sg*c - cg*s, cg*c + sg*s)
 
-	# Actuator saturation
-	u = B.dot(np.clip(invB.dot(u), -thrust_max, thrust_max))
+	# Actuator saturation with even downscaling
+	thrusts = invB.dot(u)
+	ratios = thrust_max / np.clip(np.abs(thrusts), 1E-6, np.inf)
+	if np.any(ratios < 1):
+		u = B.dot(np.min(ratios) * thrusts)
 
 	# M*vdot + D*v = u  and  pdot = R*v
 	xdot = np.concatenate((R.dot(x[3:]), invM*(u - D*x[3:])))
@@ -55,8 +58,8 @@ def dynamics(x, u, dt):
 
 ################################################# POLICY
 
-kp = np.diag([150, 150, 1000])
-kd = np.diag([120, 120, 1])
+kp = np.diag([150, 150, 2000])
+kd = np.diag([120, 120, 0.01])
 S = np.diag([1, 1, 1, 1, 1, 1])
 
 def lqr(x, u):
@@ -74,7 +77,7 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_buffer = [real_tol[0], real_tol[1], real_tol[2], np.inf, np.inf, np.inf]
+goal_buffer = [real_tol[0], real_tol[1], real_tol[2], np.inf, np.inf, real_tol[5]]
 error_tol = np.copy(goal_buffer)
 
 def gen_ss(seed, goal):
@@ -85,9 +88,9 @@ def gen_ss(seed, goal):
 	return [(min([seed[0], goal[0]]) - ss_buff, max([seed[0], goal[0]]) + ss_buff),
 			(min([seed[1], goal[1]]) - ss_buff, max([seed[1], goal[1]]) + ss_buff),
 			(-np.pi, np.pi),
-			(-abs(velmax_neg_plan[0]), velmax_pos_plan[0]),
-			(-abs(velmax_neg_plan[1]), velmax_pos_plan[1]),
-			(-abs(velmax_neg_plan[2]), velmax_pos_plan[2])]
+			(-abs(velmax_neg[0]), velmax_pos[0]),
+			(-abs(velmax_neg[1]), velmax_pos[1]),
+			(-abs(velmax_neg[2]), velmax_pos[2])]
 
 ################################################# MAIN ATTRIBUTES
 
