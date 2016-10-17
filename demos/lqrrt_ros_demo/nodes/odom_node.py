@@ -12,8 +12,7 @@ from nav_msgs.msg import Odometry
 
 rospy.init_node("odom_gen")
 odom_pub = rospy.Publisher('/odom', Odometry, queue_size=1)
-boatfront_pub = rospy.Publisher('/boatfront', PoseStamped, queue_size=1)
-boatback_pub = rospy.Publisher('/boatback', PoseStamped, queue_size=1)
+vehicle_pub = rospy.Publisher('/vehicle', PoseStamped, queue_size=1)
 
 odom = Odometry()
 
@@ -24,13 +23,12 @@ def odom_gen(*args):
 	o.child_frame_id = '/body'
 	odom_pub.publish(o)
 
-def planstate_cb(msg):
+def ref_cb(msg):
 	global odom
-	boatfront_pub.publish(PoseStamped(pose=msg.pose.pose, header=msg.header))
-	boatback_pub.publish(PoseStamped(pose=msg.pose.pose, header=msg.header))
+	vehicle_pub.publish(PoseStamped(pose=msg.pose.pose, header=msg.header))
 	odom = msg
 
-rospy.Subscriber('/ref', Odometry, planstate_cb)
+rospy.Subscriber('/lqrrt/ref', Odometry, ref_cb)
 
 rospy.Timer(rospy.Duration(0.05), odom_gen)
 
