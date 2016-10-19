@@ -1,0 +1,36 @@
+<launch>
+
+  <node pkg="lqrrt_ros_demo" type="lqrrt_node.py" name="lqrrt_node" output="screen">
+    <!-- Action topic to send commands to -->
+    <param name="move_topic" value="/move_to"/>
+
+    <!-- Topics for odometry and an occupancy grid-->
+    <param name="odom_topic" value="/odom"/>
+    <param name="ogrid_topic" value="/ogrid"/>
+
+    <!-- Pose reference topic - this will be the 'carrot' to follow -->
+    <param name="ref_topic" value="/lqrrt/ref"/>
+
+    <!-- Some visulatzation topics for the path and tree -->
+    <param name="path_topic" value="/lqrrt/path"/>
+    <param name="tree_topic" value="/lqrrt/tree"/>
+  </node>
+
+  <!-- ################################################################################ -->
+
+  <node pkg="lqrrt_ros_demo" type="odom_node.py" name="odom_node" output="log"/>
+
+  <!-- ################################################################################ -->
+
+  <node pkg="lqrrt_ros_demo" type="ogrid_node.py" name="ogrid_node" output="screen">
+    <!-- AOgrid parameters -->
+    <param name="grid_height" value="800"/>
+    <param name="grid_width" value="800"/>
+    <param name="grid_resolution" value="0.25"/>
+  </node>
+
+  <!-- ################################################################################ -->
+
+  <node pkg="actionlib" type="axclient.py" name="action_client" args="/move_to"/>
+
+</launch>

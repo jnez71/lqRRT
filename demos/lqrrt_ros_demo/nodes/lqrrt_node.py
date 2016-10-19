@@ -26,8 +26,7 @@ from lqrrt_ros_demo.msg import MoveAction, MoveFeedback, MoveResult
 
 class LQRRT_Node(object):
 
-    def __init__(self, odom_topic='/odom', ogrid_topic='/ogrid', ref_topic='/lqrrt/ref',
-                 move_topic='/move_to', path_topic='/lqrrt/path', tree_topic='/lqrrt/tree'):
+    def __init__(self, odom_topic, ogrid_topic, ref_topic, move_topic, path_topic, tree_topic):
         """
         Initialize with topic names.
 
@@ -806,5 +805,13 @@ class LQRRT_Node(object):
 if __name__ == "__main__":
     rospy.init_node("LQRRT")
     print("")
-    better_than_Astar = LQRRT_Node()
+
+    move_topic = rospy.get_param("~move_topic", "/move_to")
+    odom_topic = rospy.get_param("~odom_topic", "/odom")
+    ogrid_topic = rospy.get_param("~ogrid_topic", "/ogrid")
+    ref_topic = rospy.get_param("~ref_topic", "/lqrrt/ref")
+    path_topic = rospy.get_param("~path_topic", "/lqrrt/path")
+    tree_topic = rospy.get_param("~tree_topic", "/lqrrt/tree")
+
+    better_than_Astar = LQRRT_Node(odom_topic, ogrid_topic, ref_topic, move_topic, path_topic, tree_topic)
     rospy.spin()

@@ -1,0 +1,19 @@
+<launch>
+
+  <node pkg="lqrrt_ros_demo" type="lqrrt_node.py" name="lqrrt_node" output="log">
+    <!-- Action topic to send commands to -->
+    <param name="move_topic" value="/move_to"/>
+
+    <!-- Topics for odometry and an occupancy grid-->
+    <param name="odom_topic" value="/odom"/>
+    <param name="ogrid_topic" value="/ogrid"/>
+
+    <!-- Pose reference topic - this will be the 'carrot' to follow -->
+    <param name="ref_topic" value="/lqrrt/ref"/>
+
+    <!-- Some visulatzation topics for the path and tree -->
+    <param name="path_topic" value="/lqrrt/path"/>
+    <param name="tree_topic" value="/lqrrt/tree"/>
+  </node>
+
+</launch>
