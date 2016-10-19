@@ -4,6 +4,7 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /Effort1
         - /Path1/Status1
       Splitter Ratio: 0.694444
     Tree Height: 420
@@ -59,13 +60,13 @@ Visualization Manager:
     - Angle Tolerance: 0.0001
       Class: rviz/Odometry
       Color: 255; 25; 0
-      Enabled: true
+      Enabled: false
       Keep: 1
       Length: 2.667
       Name: Odom
       Position Tolerance: 0.01
       Topic: /odom
-      Value: true
+      Value: false
     - Alpha: 0.25
       Axes Length: 1
       Axes Radius: 0.1
@@ -105,6 +106,19 @@ Visualization Manager:
       Name: Reference
       Position Tolerance: 0.01
       Topic: /lqrrt/ref
+      Value: true
+    - Alpha: 0.5
+      Arrow Width: 2
+      Class: rviz/WrenchStamped
+      Enabled: true
+      Force Arrow Scale: 0.005
+      Force Color: 255; 85; 0
+      History Length: 1
+      Name: Effort
+      Topic: /lqrrt/effort
+      Torque Arrow Scale: 0.005
+      Torque Color: 255; 85; 127
+      Unreliable: false
       Value: true
     - Arrow Length: 0.5
       Class: rviz/PoseArray
@@ -182,8 +196,8 @@ Visualization Manager:
       Scale: 10.4093
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz)
-      X: 5.72088
-      Y: 0.175332
+      X: 18.223
+      Y: 4.36277
     Saved: ~
 Window Geometry:
   Displays:
@@ -202,4 +216,4 @@ Window Geometry:
     collapsed: false
   Width: 943
   X: 967
-  Y: 16
+  Y: 24
