@@ -16,7 +16,7 @@ import rospy
 import actionlib
 import tf.transformations as trns
 
-from geometry_msgs.msg import PointStamped, Pose, PoseArray, PoseStamped
+from geometry_msgs.msg import PointStamped, Pose, PoseArray, PoseStamped, WrenchStamped
 from nav_msgs.msg import Odometry, OccupancyGrid
 
 from behaviors import params, car, boat, escape
@@ -63,6 +63,7 @@ class LQRRT_Node(object):
         self.tree_pub = rospy.Publisher(tree_topic, PoseArray, queue_size=3)
         self.goal_pub = rospy.Publisher('/lqrrt/goal', PoseStamped, queue_size=3)
         self.focus_pub = rospy.Publisher('/lqrrt/focus', PointStamped, queue_size=3)
+        self.eff_pub = rospy.Publisher('/lqrrt/effort', WrenchStamped, queue_size=3)
 
         # Actions
         self.move_server = actionlib.SimpleActionServer(move_topic, MoveAction, execute_cb=self.move_cb, auto_start=False)
@@ -82,6 +83,7 @@ class LQRRT_Node(object):
         # Internal plan
         self.goal = None
         self.get_ref = None
+        self.get_eff = None
         self.x_seq = None
         self.u_seq = None
         self.tree = None
@@ -169,6 +171,7 @@ class LQRRT_Node(object):
             self.set_goal(self.state)
             self.last_update_time = self.rostime()
             self.get_ref = lambda t: self.goal
+            self.get_eff = lambda t: np.zeros(3)
             self.move_server.set_succeeded(MoveResult())
             print("\nDone!\n")
             self.done = True
@@ -191,7 +194,7 @@ class LQRRT_Node(object):
             # If we aren't within a cone of that heading and the goal is far away, construct rotation
             if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol and npl.norm(p_err) > params.free_radius:
                 dt_rot = np.clip(params.dt, 1E-6, 0.01)
-                x_seq_rot, T_rot, rot_success = self.rotation_move(self.state, h_goal, params.pointshoot_tol, dt_rot)
+                x_seq_rot, T_rot, rot_success, u_seq_rot = self.rotation_move(self.state, h_goal, params.pointshoot_tol, dt_rot)
                 print("Rotating towards goal (duration: {})".format(np.round(T_rot, 2)))
 
                 # If rotation failed, switch to skid
@@ -203,6 +206,8 @@ class LQRRT_Node(object):
                 self.last_update_time = self.rostime()
                 self.get_ref = interp1d(np.arange(len(x_seq_rot))*dt_rot, np.array(x_seq_rot), axis=0,
                                         assume_sorted=True, bounds_error=False, fill_value=x_seq_rot[-1][:])
+                self.get_eff = interp1d(np.arange(len(u_seq_rot))*dt_rot, np.array(u_seq_rot), axis=0,
+                                        assume_sorted=True, bounds_error=False, fill_value=u_seq_rot[-1][:])
 
                 # Start tree-chaining with the end of the rotation move
                 self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos[2])
@@ -249,6 +254,7 @@ class LQRRT_Node(object):
         # Over and out!
         remain = np.copy(self.goal)
         self.get_ref = lambda t: remain
+        self.get_eff = lambda t: np.zeros(3)
         self.move_server.set_succeeded(MoveResult())
         print("\nDone!\n")
         self.done = True
@@ -326,6 +332,7 @@ class LQRRT_Node(object):
             self.tree = self.behavior.planner.tree
             self.last_update_time = self.rostime()
             self.get_ref = self.behavior.planner.get_state
+            self.get_eff = self.behavior.planner.get_effort
             self.next_runtime = self.behavior.planner.T
             if self.next_runtime > params.basic_duration:
                 self.next_runtime *= self.fudge_factor
@@ -533,16 +540,17 @@ class LQRRT_Node(object):
 
     def rotation_move(self, x, h, tol, dt=0.01):
         """
-        Returns a state sequence, total time, and success bool for
-        a simple rotate in place move. Success is False if the move
-        becomes infeasible before the state heading x[2] is within
-        the goal heading h +- tol. Simulation timestep is dt.
+        Returns a state sequence, total time, success bool and effort
+        sequence for a simple rotate in place move. Success is False if
+        the move becomes infeasible before the state heading x[2] is within
+        the goal heading h+-tol. Simulation timestep is dt.
 
         """
         # Set-up
         x = np.array(x, dtype=np.float64)
         xg = np.copy(x); xg[2] = h
-        x_seq = []; T = 0; i = 0
+        x_seq = []; u_seq = []
+        T = 0; i = 0
         u = np.zeros(3)
 
         # Simulate rotation move
@@ -550,14 +558,15 @@ class LQRRT_Node(object):
 
             # Stop if pose is infeasible
             if not self.is_feasible(np.concatenate((x[:3], np.zeros(3))), np.zeros(3)) and len(x_seq):
-                return (x_seq, T, False)
+                return (x_seq, T, False, u_seq)
             else:
                 x_seq.append(x)
+                u_seq.append(u)
 
             # Keep rotating towards goal until tolerance is met
             e = self.erf(xg, x)
             if abs(e[2]) <= tol:
-                return (x_seq, T, True)
+                return (x_seq, T, True, u_seq)
 
             # Step
             u = 3*boat.lqr(x, u)[1].dot(e)
@@ -620,9 +629,14 @@ class LQRRT_Node(object):
 
         # Time since last update
         T = self.rostime() - self.last_update_time
+        stamp = rospy.Time.now()
 
         # Publish interpolated reference
-        self.ref_pub.publish(self.pack_odom(self.get_ref(T), rospy.Time.now()))
+        self.ref_pub.publish(self.pack_odom(self.get_ref(T), stamp))
+
+        # Not really necessary, but for fun also publish the planner's effort wrench
+        if self.get_eff is not None:
+            self.eff_pub.publish(self.pack_wrenchstamped(self.get_eff(T), stamp))
 
 
     def publish_path(self):
@@ -771,6 +785,20 @@ class LQRRT_Node(object):
         msg.header.frame_id = self.world_frame_id
         msg.point.x, msg.point.y = point[:2]
         msg.point.z = 0
+        return msg
+
+
+    def pack_wrenchstamped(self, effort, stamp):
+        """
+        Converts an effort vector into a WrenchStamped message
+        with a given header timestamp.
+
+        """
+        msg = WrenchStamped()
+        msg.header.stamp = stamp
+        msg.header.frame_id = self.body_frame_id
+        msg.wrench.force.x, msg.wrench.force.y = effort[:2]
+        msg.wrench.torque.z = effort[2]
         return msg
 
 ################################################# NODE
