@@ -12,7 +12,9 @@ from nav_msgs.msg import Odometry
 import tf
 
 rospy.init_node("odom_gen")
-odom_pub = rospy.Publisher('/odom', Odometry, queue_size=1)
+
+odom_topic = rospy.get_param("/lqrrt_node/odom_topic", "/odom")
+odom_pub = rospy.Publisher(odom_topic, Odometry, queue_size=1)
 vehicle_pub = rospy.Publisher('/vehicle', PoseStamped, queue_size=1)
 
 body_world_tf = tf.TransformBroadcaster()
@@ -35,7 +37,8 @@ def ref_cb(msg):
     vehicle_pub.publish(PoseStamped(pose=msg.pose.pose, header=msg.header))
     odom = msg
 
-rospy.Subscriber('/lqrrt/ref', Odometry, ref_cb)
+ref_topic = rospy.get_param("/lqrrt_node/ref_topic", "/lqrrt/ref")
+rospy.Subscriber(ref_topic, Odometry, ref_cb)
 
 rospy.Timer(rospy.Duration(0.05), odom_gen)
 

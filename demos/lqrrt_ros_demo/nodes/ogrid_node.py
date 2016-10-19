@@ -13,14 +13,16 @@ from nav_msgs.msg import OccupancyGrid, MapMetaData
 rospy.init_node("ogrid_gen")
 
 class DrawGrid(object):
-    def __init__(self):
+    def __init__(self, height, width):
+        self.height, self.width = height, width
+
         cv2.namedWindow('image')
         cv2.setMouseCallback('image', self.do_draw)
         self.clear_screen()
         self.drawing = 0
 
     def clear_screen(self):
-        self.img = np.zeros((671, 671), np.uint8)
+        self.img = np.zeros((self.height, self.width), np.uint8)
 
     def do_draw(self, event, x, y, flags, param):
         draw_vals = {1: 100, 2: 0}
@@ -36,14 +38,19 @@ class DrawGrid(object):
 
 class OGridPub(object):
     def __init__(self):
-        self.grid_drawer = DrawGrid()
-        self.ogrid_pub = rospy.Publisher("/ogrid", OccupancyGrid, queue_size=1)
+        height = int(rospy.get_param("~grid_height", 800))
+        width = int(rospy.get_param("~grid_width", 800))
+        resolution = rospy.get_param("~grid_resolution", .25)
+        ogrid_topic = rospy.get_param("/lqrrt_node/ogrid_topic", "/ogrid")
+
+        self.grid_drawer = DrawGrid(height, width)
+        self.ogrid_pub = rospy.Publisher(ogrid_topic, OccupancyGrid, queue_size=1)
 
         m = MapMetaData()
-        m.resolution = 0.3
-        m.width = 671
-        m.height = 671
-        pos = np.array([-67.5, -111.5, 0])
+        m.resolution = resolution
+        m.width = width
+        m.height = height
+        pos = np.array([-width * resolution / 2, -height * resolution / 2, 0])
         quat = np.array([0, 0, 0, 1])
         m.origin = Pose()
         m.origin.position.x, m.origin.position.y = pos[:2]
