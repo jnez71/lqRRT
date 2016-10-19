@@ -26,7 +26,7 @@
     <!-- AOgrid parameters -->
     <param name="grid_height" value="800"/>
     <param name="grid_width" value="800"/>
-    <param name="grid_resolution" value=".25"/>
+    <param name="grid_resolution" value="0.25"/>
   </node>
 
   <!-- ################################################################################ -->
