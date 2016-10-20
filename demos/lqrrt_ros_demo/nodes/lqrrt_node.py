@@ -198,7 +198,7 @@ class LQRRT_Node(object):
 
                 # If rotation failed, switch to skid
                 if not rot_success:
-                    print("Cannot rotate completely! Switching move_type to skid.")
+                    print("\nCannot rotate completely!\nSwitching move_type to skid.")
                     self.move_type = 'skid'
 
                 # Begin interpolating rotation move
@@ -325,17 +325,15 @@ class LQRRT_Node(object):
                 self.stuck_count = 0
 
             # Cash-in new goods
-            self.enroute_behavior = self.behavior
             self.x_seq = np.copy(self.behavior.planner.x_seq)
             self.u_seq = np.copy(self.behavior.planner.u_seq)
             self.tree = self.behavior.planner.tree
             self.last_update_time = self.rostime()
             self.get_ref = self.behavior.planner.get_state
             self.get_eff = self.behavior.planner.get_effort
-            self.next_runtime = self.behavior.planner.T
-            if self.next_runtime > params.basic_duration:
-                self.next_runtime *= self.fudge_factor
+            self.next_runtime = self.fudge_factor * self.behavior.planner.T
             self.next_seed = self.get_ref(self.next_runtime)
+            self.enroute_behavior = self.behavior
             self.time_till_issue = None
 
             # Visualizers
@@ -394,9 +392,10 @@ class LQRRT_Node(object):
 
         # Use ogrid to find good bias
         if self.ogrid is not None and self.next_seed is not None:
-            xline = np.arange(self.next_seed[0], self.goal[0], params.vps_spacing)
-            yline = np.linspace(self.next_seed[1], self.goal[1], len(xline))
-            sline = np.vstack((xline, yline, np.zeros((4, len(xline))))).T
+            npoints = npl.norm(self.goal[:2] - self.next_seed[:2]) / params.vps_spacing
+            xline = np.linspace(self.next_seed[0], self.goal[0], npoints)
+            yline = np.linspace(self.next_seed[1], self.goal[1], npoints)
+            sline = np.vstack((xline, yline, np.zeros((4, npoints)))).T
             frees = 0; total = 0
             for x in sline:
                 if self.is_feasible(x, np.zeros(3)):
@@ -488,19 +487,21 @@ class LQRRT_Node(object):
         # If we are escaping, check if we have a clear path again
         if self.enroute_behavior is escape:
             start = self.get_ref(self.rostime() - self.last_update_time)
-            xline = np.arange(start[0], self.goal[0], params.vps_spacing)
-            yline = np.linspace(start[1], self.goal[1], len(xline))
-            sline = np.vstack((xline, yline, np.zeros((4, len(xline))))).T
+            npoints = npl.norm(self.goal[:2] - start[:2]) / params.vps_spacing
+            xline = np.linspace(start[0], self.goal[0], npoints)
+            yline = np.linspace(start[1], self.goal[1], npoints)
+            sline = np.vstack((xline, yline, np.zeros((4, npoints)))).T
             checks = []
             for x in sline:
                 checks.append(self.is_feasible(x, np.zeros(3)))
             if np.all(checks):
-                self.time_till_issue = 1E2
+                self.time_till_issue = np.inf
+                self.move_type = 'drive'
                 for behavior in self.behaviors_list:
                     behavior.planner.kill_update()
                 self.stuck = False
                 self.stuck_count = 0
-                print("\nDone escaping!")
+                print("\nClear path found!")
                 return
 
         # No concerns
@@ -557,7 +558,8 @@ class LQRRT_Node(object):
 
             # Stop if pose is infeasible
             if not self.is_feasible(np.concatenate((x[:3], np.zeros(3))), np.zeros(3)) and len(x_seq):
-                return (x_seq, T, False, u_seq)
+                portion = params.FPR*len(x_seq)
+                return (x_seq[:int(portion)], T-portion*dt, False, u_seq[:int(portion)])
             else:
                 x_seq.append(x)
                 u_seq.append(u)
@@ -803,7 +805,7 @@ class LQRRT_Node(object):
 ################################################# NODE
 
 if __name__ == "__main__":
-    rospy.init_node("LQRRT")
+    rospy.init_node("lqrrt_node")
     print("")
 
     move_topic = rospy.get_param("~move_topic", "/move_to")
