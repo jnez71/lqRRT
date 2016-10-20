@@ -243,11 +243,15 @@ class Planner:
                         if self.printing:
                             print("Found plan at elapsed time: {} s".format(np.round(time_elapsed, 6)))
 
-            # Check if we should stop planning
+            # For checking if we should stop planning
             time_elapsed = self.sys_time() - time_start
 
-            # Success
-            if self.plan_reached_goal and time_elapsed >= min_time:
+            # Abrupt termination
+            if self.killed:
+                break
+
+            # Close-out for reached-goal
+            elif self.plan_reached_goal and time_elapsed >= min_time:
                 if finish_on_goal:
                     # Steer to exact goal
                     xgoal_seq, ugoal_seq = self._steer(self.node_seq[-1], self.goal, force_arrive=True)
@@ -264,8 +268,8 @@ class Planner:
                 self._prepare_interpolators()
                 break
 
-            # Failure (kinda)
-            elif ((time_elapsed >= max_time or self.tree.size > self.max_nodes) and not self.plan_reached_goal) or self.killed:
+            # Close-out for didn't-reach-goal
+            elif time_elapsed >= max_time or self.tree.size > self.max_nodes:
                 # Find node that has the most potential to steer to the goal
                 Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
                 for i, g in enumerate(self.constraints.goal_buffer):
