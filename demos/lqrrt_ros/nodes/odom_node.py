@@ -11,7 +11,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 import tf
 
-rospy.init_node("odom_gen")
+rospy.init_node("odom_node")
 
 odom_topic = rospy.get_param("/lqrrt_node/odom_topic", "/odom")
 odom_pub = rospy.Publisher(odom_topic, Odometry, queue_size=1)

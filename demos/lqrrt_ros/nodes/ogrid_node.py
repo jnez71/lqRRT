@@ -10,7 +10,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from nav_msgs.msg import OccupancyGrid, MapMetaData
 
-rospy.init_node("ogrid_gen")
+rospy.init_node("ogrid_node")
 
 class DrawGrid(object):
     def __init__(self, height, width):

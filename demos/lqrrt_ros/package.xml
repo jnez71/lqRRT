@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package>
 
-  <name>lqrrt_ros_demo</name>
+  <name>lqrrt_ros</name>
   <version>0.0.0</version>
   <description>Example ROS package for lqrrt.</description>
   <maintainer email="nez.jason7@gmail.com">jason</maintainer>

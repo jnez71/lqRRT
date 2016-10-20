@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(lqrrt_ros_demo)
+project(lqrrt_ros)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -96,7 +96,7 @@ generate_messages(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
 #  INCLUDE_DIRS include
-#  LIBRARIES lqrrt_ros_demo
+#  LIBRARIES lqrrt_ros
   CATKIN_DEPENDS roscpp rospy std_msgs geometry_msgs nav_msgs actionlib actionlib_msgs
 #  DEPENDS system_lib
 )
@@ -113,24 +113,24 @@ include_directories(
 )
 
 ## Declare a C++ library
-# add_library(lqrrt_ros_demo
-#   src/${PROJECT_NAME}/lqrrt_ros_demo.cpp
+# add_library(lqrrt_ros
+#   src/${PROJECT_NAME}/lqrrt_ros.cpp
 # )
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(lqrrt_ros_demo ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(lqrrt_ros ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-# add_executable(lqrrt_ros_demo_node src/lqrrt_ros_demo_node.cpp)
+# add_executable(lqrrt_ros_node src/lqrrt_ros_node.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(lqrrt_ros_demo_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(lqrrt_ros_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(lqrrt_ros_demo_node
+# target_link_libraries(lqrrt_ros_node
 #   ${catkin_LIBRARIES}
 # )
 
@@ -149,7 +149,7 @@ include_directories(
 # )
 
 ## Mark executables and/or libraries for installation
-# install(TARGETS lqrrt_ros_demo lqrrt_ros_demo_node
+# install(TARGETS lqrrt_ros lqrrt_ros_node
 #   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 #   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 #   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
@@ -174,7 +174,7 @@ include_directories(
 #############
 
 ## Add gtest based cpp test target and link libraries
-# catkin_add_gtest(${PROJECT_NAME}-test test/test_lqrrt_ros_demo.cpp)
+# catkin_add_gtest(${PROJECT_NAME}-test test/test_lqrrt_ros.cpp)
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
 # endif()

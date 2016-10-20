@@ -1,6 +1,6 @@
 <launch>
 
-  <node pkg="lqrrt_ros_demo" type="lqrrt_node.py" name="lqrrt_node" output="screen">
+  <node pkg="lqrrt_ros" type="lqrrt_node.py" name="lqrrt_node" output="screen">
     <!-- Action topic to send commands to -->
     <param name="move_topic" value="/move_to"/>
 
@@ -18,11 +18,11 @@
 
   <!-- ################################################################################ -->
 
-  <node pkg="lqrrt_ros_demo" type="odom_node.py" name="odom_node" output="log"/>
+  <node pkg="lqrrt_ros" type="odom_node.py" name="odom_node" output="log"/>
 
   <!-- ################################################################################ -->
 
-  <node pkg="lqrrt_ros_demo" type="ogrid_node.py" name="ogrid_node" output="screen">
+  <node pkg="lqrrt_ros" type="ogrid_node.py" name="ogrid_node" output="screen">
     <!-- AOgrid parameters -->
     <param name="grid_height" value="800"/>
     <param name="grid_width" value="800"/>

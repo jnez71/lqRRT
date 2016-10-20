@@ -5,7 +5,7 @@ from catkin_pkg.python_setup import generate_distutils_setup
 
 # Fetch values from package.xml
 setup_args = generate_distutils_setup(
-    packages=['lqrrt_ros_demo', 'behaviors']
+    packages=['lqrrt_ros', 'behaviors']
     #package_dir={'': 'src'},
     #requires=[],
 )

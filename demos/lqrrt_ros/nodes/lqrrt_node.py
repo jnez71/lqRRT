@@ -20,7 +20,7 @@ from geometry_msgs.msg import PointStamped, Pose, PoseArray, PoseStamped, Wrench
 from nav_msgs.msg import Odometry, OccupancyGrid
 
 from behaviors import params, car, boat, escape
-from lqrrt_ros_demo.msg import MoveAction, MoveFeedback, MoveResult
+from lqrrt_ros.msg import MoveAction, MoveFeedback, MoveResult
 
 ################################################# INITIALIZATIONS
 
