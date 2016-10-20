@@ -11,9 +11,12 @@
     <!-- Pose reference topic - this will be the 'carrot' to follow -->
     <param name="ref_topic" value="/lqrrt/ref"/>
 
-    <!-- Some visulatzation topics for the path and tree -->
+    <!-- Some visulatzation topics for the path, tree, and other good stuff-->
     <param name="path_topic" value="/lqrrt/path"/>
     <param name="tree_topic" value="/lqrrt/tree"/>
+    <param name="goal_topic" value="/lqrrt/goal"/>
+    <param name="focus_topic" value="/lqrrt/focus"/>
+    <param name="effort_topic" value="/lqrrt/effort"/>
   </node>
 
 </launch>

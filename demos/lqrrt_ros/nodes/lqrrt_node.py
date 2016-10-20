@@ -26,7 +26,8 @@ from lqrrt_ros.msg import MoveAction, MoveFeedback, MoveResult
 
 class LQRRT_Node(object):
 
-    def __init__(self, odom_topic, ogrid_topic, ref_topic, move_topic, path_topic, tree_topic):
+    def __init__(self, odom_topic, ogrid_topic, ref_topic, move_topic, path_topic,
+                 tree_topic, goal_topic, focus_topic, effort_topic):
         """
         Initialize with topic names.
 
@@ -60,9 +61,9 @@ class LQRRT_Node(object):
         self.ref_pub = rospy.Publisher(ref_topic, Odometry, queue_size=1)
         self.path_pub = rospy.Publisher(path_topic, PoseArray, queue_size=3)
         self.tree_pub = rospy.Publisher(tree_topic, PoseArray, queue_size=3)
-        self.goal_pub = rospy.Publisher('/lqrrt/goal', PoseStamped, queue_size=3)
-        self.focus_pub = rospy.Publisher('/lqrrt/focus', PointStamped, queue_size=3)
-        self.eff_pub = rospy.Publisher('/lqrrt/effort', WrenchStamped, queue_size=3)
+        self.goal_pub = rospy.Publisher(goal_topic, PoseStamped, queue_size=3)
+        self.focus_pub = rospy.Publisher(focus_topic, PointStamped, queue_size=3)
+        self.eff_pub = rospy.Publisher(effort_topic, WrenchStamped, queue_size=3)
 
         # Actions
         self.move_server = actionlib.SimpleActionServer(move_topic, MoveAction, execute_cb=self.move_cb, auto_start=False)
@@ -814,6 +815,11 @@ if __name__ == "__main__":
     ref_topic = rospy.get_param("~ref_topic", "/lqrrt/ref")
     path_topic = rospy.get_param("~path_topic", "/lqrrt/path")
     tree_topic = rospy.get_param("~tree_topic", "/lqrrt/tree")
+    goal_topic = rospy.get_param("~goal_topic", "/lqrrt/goal")
+    focus_topic = rospy.get_param("~focus_topic", "/lqrrt/focus")
+    effort_topic = rospy.get_param("~effort_topic", "/lqrrt/effort")
 
-    better_than_Astar = LQRRT_Node(odom_topic, ogrid_topic, ref_topic, move_topic, path_topic, tree_topic)
+    better_than_Astar = LQRRT_Node(odom_topic, ogrid_topic, ref_topic,
+                                   move_topic, path_topic, tree_topic,
+                                   goal_topic, focus_topic, effort_topic)
     rospy.spin()
