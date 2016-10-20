@@ -4,7 +4,6 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /Effort1
         - /Path1/Status1
       Splitter Ratio: 0.694444
     Tree Height: 420
@@ -196,8 +195,8 @@ Visualization Manager:
       Scale: 10.4093
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz)
-      X: 18.223
-      Y: 4.36277
+      X: 10.2366
+      Y: 0.353173
     Saved: ~
 Window Geometry:
   Displays:
@@ -216,4 +215,4 @@ Window Geometry:
     collapsed: false
   Width: 943
   X: 967
-  Y: 24
+  Y: 14
