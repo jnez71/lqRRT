@@ -31,6 +31,6 @@
 
   <!-- ################################################################################ -->
 
-  <node pkg="actionlib" type="axclient.py" name="action_client" args="/move_to"/>
+  <node name="action_client" pkg="lqrrt_ros" type="launch_axclient.sh"/>
 
 </launch>
