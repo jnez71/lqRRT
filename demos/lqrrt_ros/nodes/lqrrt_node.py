@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """
-Node that subscribes to the current boat state (Odometry message),
+Example of a ROS node that uses lqRRT for a big boat.
+
+This node subscribes to the current boat state (Odometry message),
 and the world-frame ogrid (OccupancyGrid message). It publishes the
 REFerence trajectory that moves to the goal as an Odometry message, as
 well as the path and tree as PoseArray messages. An action is provided

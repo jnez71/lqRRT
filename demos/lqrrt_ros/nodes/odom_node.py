@@ -2,7 +2,7 @@
 """
 For now, just publishes a fake odom that perfectly tracks the plan.
 Eventually will run a basic controller and sim to show tracking.
-Two PoseStamped messages are also published to allow for displaying
+A PoseStamped echo of /ref is also published to allow for displaying
 the size of the boat in rviz.
 
 """
