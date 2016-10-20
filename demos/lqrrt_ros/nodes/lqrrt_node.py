@@ -36,7 +36,6 @@ class LQRRT_Node(object):
         """
         # One-time initializations
         self.revisit_period = 0.05  # s
-        self.fudge_factor = 0.9
         self.rostime = lambda: rospy.Time.now().to_sec()
         self.ogrid = None
         self.state = None
@@ -334,7 +333,7 @@ class LQRRT_Node(object):
             self.last_update_time = self.rostime()
             self.get_ref = self.behavior.planner.get_state
             self.get_eff = self.behavior.planner.get_effort
-            self.next_runtime = self.fudge_factor * self.behavior.planner.T
+            self.next_runtime = params.fudge_factor * self.behavior.planner.T
             self.next_seed = self.get_ref(self.next_runtime)
             self.enroute_behavior = self.behavior
             self.time_till_issue = None

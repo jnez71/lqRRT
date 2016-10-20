@@ -17,6 +17,7 @@ pointshoot_tol = np.deg2rad(10)  # rad
 basic_duration = 1  # s
 free_radius = 6  # m
 stuck_threshold = 2
+fudge_factor = 0.9
 
 ################################################# TREE GROWTH
 
