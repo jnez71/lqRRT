@@ -100,7 +100,8 @@ constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
                                 goal_buffer=goal_buffer, is_feasible=unset)
 
 planner = lqrrt.Planner(dynamics, lqr, constraints,
-                        horizon=horizon, dt=dt, FPR=FPR,
+                        horizon=horizon, dt=dt,
+                        FPR=FPR, CPF=CPF,
                         error_tol=error_tol, erf=unset,
                         min_time=basic_duration, max_time=basic_duration, max_nodes=max_nodes,
                         sys_time=unset, printing=False)
