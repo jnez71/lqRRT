@@ -249,6 +249,7 @@ class LQRRT_Node(object):
             # Check for abrupt termination
             if self.preempted:
                 print("\nTerminated.")
+                self.move_server.set_preempted()
                 self.done = True
                 return False
 
@@ -256,8 +257,8 @@ class LQRRT_Node(object):
         remain = np.copy(self.goal)
         self.get_ref = lambda t: remain
         self.get_eff = lambda t: np.zeros(3)
-        self.move_server.set_succeeded(MoveResult())
         print("\nDone!\n")
+        self.move_server.set_succeeded(MoveResult())
         self.done = True
         return True
 
@@ -515,11 +516,10 @@ class LQRRT_Node(object):
         Manages action preempting.
 
         """
-        if not self.move_server.is_active():
+        if self.preempted or not self.move_server.is_active():
             return
 
         if self.move_server.is_preempt_requested() or (rospy.is_shutdown() and self.busy):
-            self.move_server.set_preempted()
             self.preempted = True
             print("\nAction preempted!")
             if self.behavior is not None:
@@ -530,6 +530,7 @@ class LQRRT_Node(object):
                     rospy.sleep(0.1)
             print("\n")
             self.reset()
+            return
 
         if self.enroute_behavior is not None and self.tree is not None and self.tracking is not None and \
            self.next_runtime is not None and self.last_update_time is not None:
