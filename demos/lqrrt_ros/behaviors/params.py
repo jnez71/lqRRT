@@ -17,7 +17,7 @@ pointshoot_tol = np.deg2rad(10)  # rad
 basic_duration = 1  # s
 free_radius = 6  # m
 stuck_threshold = 2
-fudge_factor = 0.5
+fudge_factor = 0.9
 
 ################################################# TREE GROWTH
 
@@ -75,7 +75,7 @@ boat_width = 96 * 0.0254  # m
 boat_buffer = 0.15  # m
 
 # Grid of points defining boat
-vps_spacing = 0.25  # m
+vps_spacing = 0.1  # m
 vps_grid_x, vps_grid_y = np.mgrid[slice(-(boat_length+boat_buffer)/2, (boat_length+boat_buffer)/2+vps_spacing, vps_spacing),
                                   slice(-(boat_width+boat_buffer)/2, (boat_width+boat_buffer)/2+vps_spacing, vps_spacing)]
 vps_grid_x = vps_grid_x.reshape(vps_grid_x.size)
