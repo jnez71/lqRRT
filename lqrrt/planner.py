@@ -270,7 +270,7 @@ class Planner:
 
             # Close-out for didn't-reach-goal
             elif time_elapsed >= max_time or self.tree.size > self.max_nodes:
-                # Find node that has the most potential to steer to the goal
+                # Find close node that has the most potential to steer to the goal
                 Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
                 for i, g in enumerate(self.constraints.goal_buffer):
                     if np.isinf(g):
@@ -279,7 +279,7 @@ class Planner:
                 closestIDs = np.argsort(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
                 best_dist = np.inf
                 self.horizon_iters *= self.CPF
-                for i, ID in enumerate(closestIDs[:np.ceil(0.5*self.tree.size)]):
+                for i, ID in enumerate(closestIDs[:np.ceil(0.1*self.tree.size)]):
                     xcheck_seq, ucheck_seq = self._steer(ID, self.goal, force_arrive=False)
                     if len(xcheck_seq) > 1:
                         diff = xcheck_seq[-1] - self.goal
