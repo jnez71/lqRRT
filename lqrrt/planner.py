@@ -98,8 +98,8 @@ class Planner:
 #################################################
 
     def update_plan(self, x0, sample_space, goal_bias=0,
-                    xrand_gen=None, finish_on_goal=False,
-                    specific_time=None):
+                    guide=None, xrand_gen=None,
+                    finish_on_goal=False, specific_time=None):
         """
         A new tree is grown from the seed x0 in an attempt to plan
         a path to the goal. The returned path can be accessed with
@@ -116,7 +116,7 @@ class Planner:
         Alternatively, you can give a function xrand_gen which takes the
         current planner instance (self) and outputs the random sample state.
         Doing this will override both sample_space and goal_bias, which you
-        can set to None only if you provide an xrand_gen.
+        can set to arbitrary values only if you provide an xrand_gen.
 
         After min_time seconds, the fastest available path from x0 to
         the current goal is returned and the functions get_state(t)
@@ -124,7 +124,8 @@ class Planner:
 
         If no path was found yet, the search continues until max_time or
         until the node limit is breached. After the limit, a warning is
-        printed and the path that gets nearest to the goal is used instead.
+        printed and the path that gets nearest to the guide is
+        used instead. If guide is left None, it defaults to goal.
 
         If finish_on_goal is set to True, once the plan makes it to the goal
         region (goal plus buffer), it will attempt to steer one more path
@@ -192,6 +193,12 @@ class Planner:
         else:
             if not hasattr(xrand_gen, '__call__'):
                 raise ValueError("Expected xrand_gen to be None or a function.")
+
+        # Store guide state
+        if guide is None:
+            self.xguide = np.copy(self.goal)
+        else:
+            self.xguide = np.array(guide, dtype=np.float64)
 
         # Loop managers
         if self.printing:
@@ -270,19 +277,19 @@ class Planner:
 
             # Close-out for didn't-reach-goal
             elif time_elapsed >= max_time or self.tree.size > self.max_nodes:
-                # Find close node that has the most potential to steer to the goal
-                Sgoal = self.lqr(self.goal, np.zeros(self.ncontrols))[0]
+                # Find close node that has the most potential to steer to the guide state
+                Sgoal = self.lqr(self.xguide, np.zeros(self.ncontrols))[0]
                 for i, g in enumerate(self.constraints.goal_buffer):
                     if np.isinf(g):
                         Sgoal[:, i] = 0
-                goaldiffs = self.tree.state - self.goal
+                goaldiffs = self.tree.state - self.xguide
                 closestIDs = np.argsort(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
                 best_dist = np.inf
                 self.horizon_iters *= self.CPF
-                for i, ID in enumerate(closestIDs[:np.ceil(0.1*self.tree.size)]):
-                    xcheck_seq, ucheck_seq = self._steer(ID, self.goal, force_arrive=False)
+                for i, ID in enumerate(closestIDs[:np.ceil(0.02*self.tree.size)]):
+                    xcheck_seq, ucheck_seq = self._steer(ID, self.xguide, force_arrive=False)
                     if len(xcheck_seq) > 1:
-                        diff = xcheck_seq[-1] - self.goal
+                        diff = xcheck_seq[-1] - self.xguide
                         dist = diff.dot(Sgoal.dot(diff))
                         if dist < best_dist:
                             best_dist = dist
