@@ -16,8 +16,8 @@ class DrawGrid(object):
     def __init__(self, height, width):
         self.height, self.width = height, width
 
-        cv2.namedWindow('image')
-        cv2.setMouseCallback('image', self.do_draw)
+        cv2.namedWindow('Draw OccupancyGrid')
+        cv2.setMouseCallback('Draw OccupancyGrid', self.do_draw)
         self.clear_screen()
         self.drawing = 0
 
@@ -71,7 +71,7 @@ class OGridPub(object):
 o = OGridPub()
 
 while True:
-    cv2.imshow("image", o.grid_drawer.img)
+    cv2.imshow("Draw OccupancyGrid", o.grid_drawer.img)
     k = cv2.waitKey(100) & 0xFF
 
     if k == 27:
