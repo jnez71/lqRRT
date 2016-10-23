@@ -13,19 +13,20 @@ ncontrols = 3
 ################################################# BEHAVIOR CONTROL
 
 real_tol = [0.5, 0.5, np.deg2rad(10), np.inf, np.inf, np.inf]
-pointshoot_tol = np.deg2rad(10)  # rad
+pointshoot_tol = np.deg2rad(20)  # rad
 basic_duration = 1  # s
 free_radius = 6  # m
 stuck_threshold = 2
-fudge_factor = 0.9
+fudge_factor = 0.80
 
 ################################################# TREE GROWTH
 
 horizon = 2  # s
 dt = 0.1  # s
-FPR = 0.5
+FPR = 0
 CPF = 2
-ss_buff = 10  # m
+ss_start = 10  # m
+ss_step = 5  # m
 max_nodes = 1E5
 
 ################################################# INERTIA

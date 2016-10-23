@@ -67,15 +67,13 @@ def lqr(x, u):
 goal_buffer = [free_radius, free_radius, np.inf, np.inf, np.inf, np.inf]
 error_tol = np.copy(goal_buffer)
 
-sf = 3
-
-def gen_ss(seed, goal):
+def gen_ss(seed, goal, buff=40):
     """
-    Returns a sample space given a seed state and goal state.
+    Returns a sample space given a seed state, goal state, and buffer.
 
     """
-    return [(seed[0] - sf*ss_buff, seed[0] + sf*ss_buff),
-            (seed[1] - sf*ss_buff, seed[1] + sf*ss_buff),
+    return [(seed[0] - buff, seed[0] + buff),
+            (seed[1] - buff, seed[1] + buff),
             (-np.pi, np.pi),
             (-abs(velmax_neg[0]), velmax_pos[0]),
             (-abs(velmax_neg[1]), velmax_pos[1]),

@@ -11,7 +11,7 @@ import lqrrt
 
 ################################################# DYNAMICS
 
-magic_rudder = 7000
+magic_rudder = 8000
 focus = None
 
 def dynamics(x, u, dt):
@@ -59,7 +59,7 @@ def dynamics(x, u, dt):
 ################################################# POLICY
 
 kp = np.diag([150, 150, 2000])
-kd = np.diag([120, 120, 0.01])
+kd = np.diag([50, 50, 0.01])
 S = np.diag([1, 1, 1, 1, 1, 1])
 
 def lqr(x, u):
@@ -80,13 +80,13 @@ def lqr(x, u):
 goal_buffer = [real_tol[0], real_tol[1], real_tol[2], np.inf, np.inf, real_tol[5]]
 error_tol = np.copy(goal_buffer)
 
-def gen_ss(seed, goal):
+def gen_ss(seed, goal, buff=[ss_start]*4):
     """
-    Returns a sample space given a seed state and goal state.
+    Returns a sample space given a seed state, goal state, and buffer.
 
     """
-    return [(min([seed[0], goal[0]]) - ss_buff, max([seed[0], goal[0]]) + ss_buff),
-            (min([seed[1], goal[1]]) - ss_buff, max([seed[1], goal[1]]) + ss_buff),
+    return [(min([seed[0], goal[0]]) - buff[0], max([seed[0], goal[0]]) + buff[1]),
+            (min([seed[1], goal[1]]) - buff[2], max([seed[1], goal[1]]) + buff[3]),
             (-np.pi, np.pi),
             (-abs(velmax_neg[0]), velmax_pos[0]),
             (-abs(velmax_neg[1]), velmax_pos[1]),
