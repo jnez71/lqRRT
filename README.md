@@ -16,3 +16,5 @@ TO-DO:
 - finish implementing circle driving for ROS demo
 - finish more elaborate readme
 - lots of beta testing
+- figure out star part of algorithm
+- more plan-reevaluation heuristics for ROS demo
