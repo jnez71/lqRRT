@@ -30,7 +30,6 @@ import scipy
 if int(scipy.__version__.split('.')[1]) < 16:
     def interp1d(*args, **kwargs):
         kwargs.pop('assume_sorted', None)
-        print kwargs
         return scipy.interpolate.interp1d(*args, **kwargs)
 else:
     interp1d = scipy.interpolate.interp1d
@@ -684,6 +683,7 @@ class LQRRT_Node(object):
            self.next_runtime is not None and self.last_update_time is not None:
             self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
                                                            self.tree.size,
+                                                           self.behavior.planner.plan_reached_goal,
                                                            self.tracking,
                                                            self.next_runtime - (self.rostime() - self.last_update_time)))
 
