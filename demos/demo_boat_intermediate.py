@@ -220,8 +220,6 @@ sample_space = [(x0[0], goal[0]),
 
 goal_bias = [0.2, 0.2, 0, 0, 0, 0]
 
-xrand_gen = None
-
 ################################################# PLAN
 
 constraints = lqrrt.Constraints(nstates=nstates, ncontrols=ncontrols,
@@ -233,8 +231,7 @@ planner = lqrrt.Planner(dynamics, lqr, constraints,
                         min_time=2, max_time=3, max_nodes=1E5,
                         goal0=goal)
 
-planner.update_plan(x0, sample_space, goal_bias=goal_bias,
-                    xrand_gen=xrand_gen, finish_on_goal=False)
+planner.update_plan(x0, sample_space, goal_bias=goal_bias, finish_on_goal=False)
 
 ################################################# SIMULATION
 
@@ -412,6 +409,6 @@ def ani_update(arg, ii=[0]):
     return None
 
 # Run animation
-print("\nStarting animation. \nBlack: robot \nRed: obstacles \nGreen: goal\n")
+print("Starting animation. \nBlack: robot \nRed: obstacles \nGreen: goal\n")
 animation = ani.FuncAnimation(fig2, func=ani_update, interval=dt*1000)
 plt.show()
