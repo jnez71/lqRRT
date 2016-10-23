@@ -13,13 +13,15 @@ from __future__ import division
 import numpy as np
 import numpy.linalg as npl
 from scipy.interpolate import interp1d
+import cv2
 
 import rospy
 import actionlib
 import tf.transformations as trns
 
-from geometry_msgs.msg import PointStamped, Pose, PoseArray, PoseStamped, WrenchStamped
 from nav_msgs.msg import Odometry, OccupancyGrid
+from geometry_msgs.msg import Point32, PointStamped, Pose, PoseArray, \
+                              PoseStamped, WrenchStamped, PolygonStamped
 
 from behaviors import params, car, boat, escape
 from lqrrt_ros.msg import MoveAction, MoveFeedback, MoveResult
@@ -28,20 +30,26 @@ from lqrrt_ros.msg import MoveAction, MoveFeedback, MoveResult
 
 class LQRRT_Node(object):
 
-    def __init__(self, odom_topic, ogrid_topic, ref_topic, move_topic, path_topic,
-                 tree_topic, goal_topic, focus_topic, effort_topic):
+    def __init__(self, odom_topic, ref_topic, move_topic, path_topic, tree_topic,
+                 goal_topic, focus_topic, effort_topic, ogrid_topic, ogrid_threshold):
         """
-        Initialize with topic names.
+        Initialize with topic names and ogrid threshold as applicable.
+        Defaults are generated at the ROS params level.
 
         """
         # One-time initializations
         self.revisit_period = 0.05  # s
-        self.rostime = lambda: rospy.Time.now().to_sec()
         self.ogrid = None
+        self.ogrid_threshold = float(ogrid_threshold)
         self.state = None
         self.tracking = None
         self.busy = False
         self.done = True
+
+        # Lil helpers
+        self.rostime = lambda: rospy.Time.now().to_sec()
+        self.intup = lambda arr: tuple(np.array(arr, dtype=np.int64))
+        self.get_hood = lambda img, row, col: img[row-1:row+2, col-1:col+2]
 
         # Set-up planners
         self.behaviors_list = [car, boat, escape]
@@ -65,6 +73,8 @@ class LQRRT_Node(object):
         self.goal_pub = rospy.Publisher(goal_topic, PoseStamped, queue_size=3)
         self.focus_pub = rospy.Publisher(focus_topic, PointStamped, queue_size=3)
         self.eff_pub = rospy.Publisher(effort_topic, WrenchStamped, queue_size=3)
+        self.sampspace_pub = rospy.Publisher(sampspace_topic, PolygonStamped, queue_size=3)
+        self.guide_pub = rospy.Publisher(guide_topic, PointStamped, queue_size=3)
 
         # Actions
         self.move_server = actionlib.SimpleActionServer(move_topic, MoveAction, execute_cb=self.move_cb, auto_start=False)
@@ -94,6 +104,8 @@ class LQRRT_Node(object):
         self.behavior = None
         self.enroute_behavior = None
         self.goal_bias = None
+        self.sample_space = None
+        self.guide = None
         self.stuck = False
         self.stuck_count = 0
 
@@ -205,10 +217,11 @@ class LQRRT_Node(object):
 
                 # Begin interpolating rotation move
                 self.last_update_time = self.rostime()
-                self.get_ref = interp1d(np.arange(len(x_seq_rot))*dt_rot, np.array(x_seq_rot), axis=0,
-                                        assume_sorted=True, bounds_error=False, fill_value=x_seq_rot[-1][:])
-                self.get_eff = interp1d(np.arange(len(u_seq_rot))*dt_rot, np.array(u_seq_rot), axis=0,
-                                        assume_sorted=True, bounds_error=False, fill_value=u_seq_rot[-1][:])
+                if len(x_seq_rot):
+                    self.get_ref = interp1d(np.arange(len(x_seq_rot))*dt_rot, np.array(x_seq_rot), axis=0,
+                                            assume_sorted=True, bounds_error=False, fill_value=x_seq_rot[-1][:])
+                    self.get_eff = interp1d(np.arange(len(u_seq_rot))*dt_rot, np.array(u_seq_rot), axis=0,
+                                            assume_sorted=True, bounds_error=False, fill_value=u_seq_rot[-1][:])
 
                 # Start tree-chaining with the end of the rotation move
                 self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos[2])
@@ -226,21 +239,21 @@ class LQRRT_Node(object):
         # (debug)
         assert self.next_seed is not None
         assert self.next_runtime is not None
-        move_number = 1
+        move_number = 0
 
         # Begin tree-chaining loop
         while not rospy.is_shutdown():
-            self.tree_chain()
+            clean_update = self.tree_chain()
+            move_number += 1
 
             # Print feedback
-            if not self.preempted:
+            if clean_update and not self.stuck and not self.preempted:
                 print("\nMove {}\n----".format(move_number))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
                 print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
                 print("Tree size: {}".format(self.tree.size))
                 print("Move duration: {}".format(np.round(self.next_runtime, 1)))
-            move_number += 1
 
             # Check if action goal is complete
             if np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
@@ -279,43 +292,47 @@ class LQRRT_Node(object):
 
         # No issue
         if self.time_till_issue is None:
-            self.behavior = self.select_behavior()
-            self.goal_bias = self.select_bias()
             if self.next_runtime < params.basic_duration and self.last_update_time is not None and not self.stuck:
                 self.next_runtime = params.basic_duration
                 self.next_seed = self.get_ref(self.next_runtime + self.rostime() - self.last_update_time)
+            elif self.stuck:
+                self.next_runtime = None
+            self.behavior = self.select_behavior()
+            self.goal_bias, self.sample_space, self.guide = self.select_exploration()
 
         # Distant issue
         elif self.time_till_issue > 2*params.basic_duration:
-            self.behavior = self.select_behavior()
-            self.goal_bias = self.select_bias()
             self.next_runtime = params.basic_duration
             self.next_seed = self.get_ref(self.next_runtime + self.rostime() - self.last_update_time)
+            self.behavior = self.select_behavior()
+            self.goal_bias, self.sample_space, self.guide = self.select_exploration()
 
         # Immediate issue
         else:
-            self.behavior = escape
-            self.goal_bias = 0
             self.next_runtime = self.time_till_issue/2
             self.next_seed = self.get_ref(self.next_runtime + self.rostime() - self.last_update_time)
+            self.behavior = escape
+            self.goal_bias = 0
+            self.sample_space = escape.gen_ss(self.next_seed, self.goal)
+            self.guide = np.copy(self.goal)
 
         # (debug)
-        if self.next_runtime == None:
-            assert self.stuck and self.time_till_issue is None and self.behavior is escape and self.goal_bias == 0
+        if self.stuck and self.time_till_issue is None:
+            assert self.next_runtime is None
 
         # Update plan
         clean_update = self.behavior.planner.update_plan(x0=self.next_seed,
-                                                         sample_space=self.behavior.gen_ss(self.next_seed, self.goal),
+                                                         sample_space=self.sample_space,
                                                          goal_bias=self.goal_bias,
+                                                         guide=self.guide,
                                                          specific_time=self.next_runtime)
 
         # Update finished properly
         if clean_update:
 
             # We might be stuck if tree is oddly small
-            if self.behavior.planner.tree.size <= params.stuck_threshold and \
-               not self.behavior.planner.plan_reached_goal and \
-               npl.norm(self.goal[:2] - self.state[:2]) > params.free_radius:
+            if (self.behavior.planner.tree.size <= params.stuck_threshold or self.behavior.planner.T == params.dt) and \
+               not self.behavior.planner.plan_reached_goal and npl.norm(self.goal[:2] - self.state[:2]) > params.free_radius:
 
                 # Increase stuck count towards threshold
                 self.stuck_count += 1
@@ -323,6 +340,8 @@ class LQRRT_Node(object):
                     print("\nI think we're stuck...")
                     self.stuck = True
                     self.stuck_count = 0
+                else:
+                    self.stuck = False
             else:
                 self.stuck = False
                 self.stuck_count = 0
@@ -334,7 +353,9 @@ class LQRRT_Node(object):
             self.last_update_time = self.rostime()
             self.get_ref = self.behavior.planner.get_state
             self.get_eff = self.behavior.planner.get_effort
-            self.next_runtime = params.fudge_factor * self.behavior.planner.T
+            self.next_runtime = self.behavior.planner.T
+            if self.next_runtime > params.basic_duration:
+                self.next_runtime *= params.fudge_factor
             self.next_seed = self.get_ref(self.next_runtime)
             self.enroute_behavior = self.behavior
             self.time_till_issue = None
@@ -342,6 +363,7 @@ class LQRRT_Node(object):
             # Visualizers
             self.publish_tree()
             self.publish_path()
+            self.publish_expl()
 
         else:
             print("Update cancelled.")
@@ -353,16 +375,17 @@ class LQRRT_Node(object):
         # Unlocking, lol
         self.busy = False
 
+        return clean_update
+
 ################################################# DECISIONS
 
     def select_behavior(self):
         """
-        Chooses the behavior for a given move.
+        Chooses the behavior for the current move.
 
         """
         # Are we stuck?
         if self.stuck:
-            self.next_runtime = None
             return escape
 
         # Positional error norm of next_seed
@@ -384,44 +407,158 @@ class LQRRT_Node(object):
         raise ValueError("Indeterminant behavior configuration.")
 
 
-    def select_bias(self):
+    def select_exploration(self):
         """
-        Chooses the goal bias for a given move.
+        Chooses the goal bias, sample space, and guide point for the current move and behavior.
 
         """
         # Escaping means maximal exploration
         if self.behavior is escape:
-            return 0
+            gs = np.copy(self.goal)
+            vec = self.goal[:2] - self.next_seed[:2]
+            dist = npl.norm(vec)
+            if dist < 2*params.free_radius:
+                gs[:2] = vec + 2*params.free_radius*(vec/dist)
+            return(0, escape.gen_ss(self.next_seed, self.goal), gs)
 
-        # Use ogrid to find good bias
+        # Analyze ogrid to find good bias and sample space buffer
         if self.ogrid is not None and self.next_seed is not None:
-            npoints = npl.norm(self.goal[:2] - self.next_seed[:2]) / params.vps_spacing
-            xline = np.linspace(self.next_seed[0], self.goal[0], npoints)
-            yline = np.linspace(self.next_seed[1], self.goal[1], npoints)
-            sline = np.vstack((xline, yline, np.zeros((4, npoints)))).T
-            frees = 0; total = 0
-            for x in sline:
-                if self.is_feasible(x, np.zeros(3)):
-                    frees += 1
-                total += 1
-            if total != 0:
-                b = np.clip(frees / total, 0.2, 0.9)
+
+            # Get opencv-ready image from current ogrid (255 is occupied, 0 is clear)
+            occ_img = 255*np.greater(self.ogrid, self.ogrid_threshold).astype(np.uint8)
+
+            # Dilate the image
+            boat_pix = int(self.ogrid_cpm*params.boat_width)
+            boat_pix += boat_pix%2
+            occ_img_dial = cv2.dilate(occ_img, np.ones((boat_pix, boat_pix), np.uint8))
+
+            # Construct the initial sample space and get bounds in pixel coordinates
+            ss = self.behavior.gen_ss(self.next_seed, self.goal)
+            pmin = self.intup(self.ogrid_cpm * ([ss[0][0], ss[1][0]] - self.ogrid_origin))
+            pmax = self.intup(self.ogrid_cpm * ([ss[0][1], ss[1][1]] - self.ogrid_origin))
+
+            # Other quantities in pixel coordinates
+            seed = self.intup(self.ogrid_cpm * (self.next_seed[:2] - self.ogrid_origin))
+            goal = self.intup(self.ogrid_cpm * (self.goal[:2] - self.ogrid_origin))
+            step = int(self.ogrid_cpm * params.ss_step)
+
+            # Make sure seed and goal are physically meaningful
+            try:
+                occ_img_dial[seed[1], seed[0]]
+                occ_img_dial[goal[1], goal[0]]
+            except IndexError:
+                print("Goal and/or seed out of bounds of occupancy grid!")
+                return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+
+            # Initializations
+            while_break_flag = False
+            push = [0, 0, 0, 0]
+            npush = 0
+            gs = np.copy(self.goal)
+            last_offsets = [pmin[0], pmin[1]]
+            ss_img = np.copy(occ_img_dial[pmin[1]:pmax[1], pmin[0]:pmax[0]])
+            ss_goal = self.intup(np.subtract(goal, last_offsets))
+            ss_seed = self.intup(np.subtract(seed, last_offsets))
+
+            # Iteratively determine how much to push out the sample space
+            while np.all(np.less_equal(push, len(occ_img_dial))):
+                if while_break_flag:
+                    break
+
+                # Find dividing boundary points
+                bpts = self.boundary_analysis(ss_img, ss_seed, ss_goal)
+
+                # No boundary points means time to end
+                if len(bpts) == 0:
+                    break
+
+                # Flags
+                push_xmin = False
+                push_xmax = False
+                push_ymin = False
+                push_ymax = False
+
+                # Buffered boundary imensions
+                row_min = 1; col_min = 1
+                row_max = ss_img.shape[0] - 2
+                col_max = ss_img.shape[1] - 2
+
+                # Classify boundary points
+                for (row, col) in bpts:
+                    if col == col_min:  # left
+                        push_xmin = True
+                        if row == row_min:  # top left
+                            push_ymin = True
+                        elif row == row_max:  # bottom left
+                            push_ymax = True
+                    elif col == col_max:  # right
+                        push_xmax = True
+                        if row == row_min:  # top right
+                            push_ymin = True
+                        elif row == row_max:  # bottom left
+                            push_ymax = True
+                    elif row == row_min:  # top
+                        push_ymin = True
+                    elif row == row_max:  # bottom
+                        push_ymax = True
+
+                    # Push accordingly
+                    if push_xmin:
+                        push[0] += step
+                        npush += 1
+                    if push_xmax:
+                        push[1] += step
+                        npush += 1
+                    if push_ymin:
+                        push[2] += step
+                        npush += 1
+                    if push_ymax:
+                        push[3] += step
+                        npush += 1
+
+                    # Get image cropped to sample space and offset points of interest
+                    offset_x = (pmin[0]-push[0], pmax[0]+push[1])
+                    offset_y = (pmin[1]-push[2], pmax[1]+push[3])
+                    ss_img = np.copy(occ_img_dial[offset_y[0]:offset_y[1], offset_x[0]:offset_x[1]])
+                    ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
+                    ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
+                    test_flood = np.copy(ss_img)
+                    area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
+                    if test_flood[ss_seed[1], ss_seed[0]] == 69:
+                        gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
+                        while_break_flag = True
+                        break
+
+                # Used for remembering the previous sample space coordinates
+                last_offsets = [offset_x[0], offset_y[0]]
+
+            # Apply push in real coordinates
+            push = np.array(push, dtype=np.float64) / self.ogrid_cpm
+            if npush > 0:
+                push += params.boat_length
+            ss = self.behavior.gen_ss(self.next_seed, self.goal, push + 4*[params.ss_start])
+
+            # Select bias based on density of ogrid in sample space
+            if ss_img.size:
+                free_ratio = len(np.argwhere(ss_img == 0)) / ss_img.size
+                b = np.clip(free_ratio - 0.05*npush, 0, 0.9)
             else:
                 b = 1
         else:
             b = 1
+            gs = np.copy(self.goal)
 
         # For boating, no focus means hold goal orientation
         if self.behavior is boat:
             if npl.norm(self.goal[:2] - self.next_seed[:2]) < params.free_radius:
-                return [1, 1, 1, 0.1, 0.1, 0]
+                return([1, 1, 1, 0.1, 0.1, 0], ss, gs)
             else:
-                return [b, b, 1, 0, 0, 1]
+                return([b, b, 1, 0, 0, 1], ss, gs)
 
         # For car-ing, just don't bias too much
         if self.behavior is car:
-            bc = np.clip(b, 0, 0.75)
-            return [bc, bc, 0, 0, 0.5, 0]
+            b = np.clip(b, 0, 0.75)
+            return([b, b, 0, 0, 0.5, 0], ss, gs)
 
         # (debug)
         raise ValueError("Indeterminant behavior configuration.")
@@ -454,8 +591,8 @@ class LQRRT_Node(object):
             print("WOAH NELLY! Search exceeded ogrid size.")
             return False
 
-        # Assuming anything greater than 90 is a hit
-        return np.all(grid_values < 90)
+        # Greater than threshold is a hit
+        return np.all(grid_values < self.ogrid_threshold)
 
 
     def reevaluate_plan(self):
@@ -490,10 +627,12 @@ class LQRRT_Node(object):
         # If we are escaping, check if we have a clear path again
         if self.enroute_behavior is escape:
             start = self.get_ref(self.rostime() - self.last_update_time)
-            npoints = npl.norm(self.goal[:2] - start[:2]) / params.vps_spacing
+            p_err = self.goal[:2] - start[:2]
+            npoints = npl.norm(p_err) / params.vps_spacing
             xline = np.linspace(start[0], self.goal[0], npoints)
             yline = np.linspace(start[1], self.goal[1], npoints)
-            sline = np.vstack((xline, yline, np.zeros((4, npoints)))).T
+            hline = [np.arctan2(p_err[1], p_err[0])] * npoints
+            sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
             checks = []
             for x in sline:
                 checks.append(self.is_feasible(x, np.zeros(3)))
@@ -609,6 +748,60 @@ class LQRRT_Node(object):
         sg = np.sin(agoal)
         return np.arctan2(sg*c - cg*s, cg*c + sg*s)
 
+
+    def boundary_analysis(self, img, seed, goal):
+        """
+        Returns a list of the two boundary points of the contour dividing seed from
+        goal in the occupancy image img (or an empty list if no boundary). Make sure
+        seed and goal are intups and in the same pixel coordinates as img, and that
+        occupied pixels have value 255 in img.
+
+        """
+        # Safety and space
+        img = np.copy(img)
+        bpts = []
+
+        # If goal can flood to seed then done
+        flood_goal = np.copy(img)
+        area, rect = cv2.floodFill(flood_goal, np.zeros((flood_goal.shape[0]+2, flood_goal.shape[1]+2), np.uint8), goal, 96)
+        if flood_goal[seed[1], seed[0]] == 96:
+            return bpts
+        
+        # Filter out the dividing boundary
+        flood_goal_thresh = 96*np.equal(flood_goal, 96).astype(np.uint8)
+        flood_seed = np.copy(flood_goal_thresh)
+        area, rect = cv2.floodFill(flood_seed, np.zeros((flood_seed.shape[0]+2, flood_seed.shape[1]+2), np.uint8), seed, 69)
+        flood_seed_thresh = 69*np.equal(flood_seed, 69).astype(np.uint8)
+
+        # Buffered boundaries and dimensions
+        left = img[1:-1, 1]
+        right = img[1:-1, -2]
+        top = img[1, 2:-2]
+        bottom = img[-2, 2:-2]
+        row_min = 1; col_min = 1
+        row_max = img.shape[0] - 2
+        col_max = img.shape[1] - 2
+
+        # Buffered boundary points that were occupied, in boundary coordinates
+        left_cands = np.argwhere(np.equal(left, 255))
+        right_cands = np.argwhere(np.equal(right, 255))
+        top_cands = np.argwhere(np.equal(top, 255))
+        bottom_cands = np.argwhere(np.equal(bottom, 255))
+
+        # Convert to original coordinates
+        left_cands = np.hstack((left_cands+1, col_min*np.ones_like(left_cands)))
+        right_cands = np.hstack((right_cands+1, col_max*np.ones_like(right_cands)))
+        top_cands = np.hstack((row_min*np.ones_like(top_cands), top_cands+2))
+        bottom_cands = np.hstack((row_max*np.ones_like(bottom_cands), bottom_cands+2))
+        cands = np.vstack((left_cands, right_cands, top_cands, bottom_cands))
+
+        # Iterate through candidates and store the dividing boundary points
+        for (row, col) in cands:
+            hood = self.get_hood(flood_seed_thresh, row, col)
+            if np.any(hood == 69) and np.any(hood == 0):
+                bpts.append([row, col])
+        return bpts
+
 ################################################# PUBDUBS
 
     def set_goal(self, x):
@@ -682,6 +875,28 @@ class LQRRT_Node(object):
             msg = PoseArray(poses=pose_list)
             msg.header.frame_id = self.world_frame_id
             self.tree_pub.publish(msg)
+
+
+    def publish_expl(self):
+        """
+        Publishes sample space as a PolygonStamped and
+        the guide point as a PointStamped.
+
+        """
+        # Make sure a plan exists
+        if self.sample_space is None or self.guide is None:
+            return
+
+        # Construct and publish
+        point_list = [Point32(self.sample_space[0][0], self.sample_space[1][0], 0),
+                      Point32(self.sample_space[0][1], self.sample_space[1][0], 0),
+                      Point32(self.sample_space[0][1], self.sample_space[1][1], 0),
+                      Point32(self.sample_space[0][0], self.sample_space[1][1], 0)]
+        ss_msg = PolygonStamped()
+        ss_msg.header.frame_id = self.world_frame_id
+        ss_msg.polygon.points = point_list
+        self.sampspace_pub.publish(ss_msg)
+        self.guide_pub.publish(self.pack_pointstamped(self.guide[:2], rospy.Time.now()))
 
 ################################################# SUBSCRUBS
 
@@ -814,14 +1029,19 @@ if __name__ == "__main__":
     move_topic = rospy.get_param("~move_topic", "/move_to")
     odom_topic = rospy.get_param("~odom_topic", "/odom")
     ogrid_topic = rospy.get_param("~ogrid_topic", "/ogrid")
+    ogrid_threshold = rospy.get_param("~ogrid_threshold", "90")
     ref_topic = rospy.get_param("~ref_topic", "/lqrrt/ref")
     path_topic = rospy.get_param("~path_topic", "/lqrrt/path")
     tree_topic = rospy.get_param("~tree_topic", "/lqrrt/tree")
     goal_topic = rospy.get_param("~goal_topic", "/lqrrt/goal")
     focus_topic = rospy.get_param("~focus_topic", "/lqrrt/focus")
     effort_topic = rospy.get_param("~effort_topic", "/lqrrt/effort")
+    sampspace_topic = rospy.get_param("~sampspace_topic", "/lqrrt/sampspace")
+    guide_topic = rospy.get_param("~guide_topic", "/lqrrt/guide")
 
-    better_than_Astar = LQRRT_Node(odom_topic, ogrid_topic, ref_topic,
-                                   move_topic, path_topic, tree_topic,
-                                   goal_topic, focus_topic, effort_topic)
+    better_than_Astar = LQRRT_Node(odom_topic, ref_topic, move_topic,
+                                   path_topic, tree_topic, goal_topic,
+                                   focus_topic, effort_topic, ogrid_topic,
+                                   ogrid_threshold)
+
     rospy.spin()
