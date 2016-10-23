@@ -4,19 +4,23 @@
     <!-- Action topic to send commands to -->
     <param name="move_topic" value="/move_to"/>
 
-    <!-- Topics for odometry and an occupancy grid-->
+    <!-- For odometry and an occupancy grid-->
     <param name="odom_topic" value="/odom"/>
     <param name="ogrid_topic" value="/ogrid"/>
+    <param name="ogrid_threshold" value="90"/>
 
     <!-- Pose reference topic - this will be the 'carrot' to follow -->
     <param name="ref_topic" value="/lqrrt/ref"/>
 
-    <!-- Some visulatzation topics for the path, tree, and other good stuff-->
+    <!-- Some visualization topics for the path, tree, and other good stuff-->
     <param name="path_topic" value="/lqrrt/path"/>
     <param name="tree_topic" value="/lqrrt/tree"/>
     <param name="goal_topic" value="/lqrrt/goal"/>
     <param name="focus_topic" value="/lqrrt/focus"/>
     <param name="effort_topic" value="/lqrrt/effort"/>
+    <param name="sampspace_topic" value="/lqrrt/sampspace"/>
+    <param name="guide_topic" value="/lqrrt/guide"/>
+
   </node>
 
 </launch>
