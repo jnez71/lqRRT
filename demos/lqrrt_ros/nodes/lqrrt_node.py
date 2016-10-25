@@ -122,6 +122,7 @@ class LQRRT_Node(object):
         self.next_runtime = None
         self.next_seed = None
         self.time_till_issue = None
+        self.goal_infeasible = False
         self.preempted = False
 
         # Unkill all planners
@@ -230,10 +231,11 @@ class LQRRT_Node(object):
                                             assume_sorted=True, bounds_error=False, fill_value=x_seq_rot[-1][:])
                     self.get_eff = interp1d(np.arange(len(u_seq_rot))*dt_rot, np.array(u_seq_rot), axis=0,
                                             assume_sorted=True, bounds_error=False, fill_value=u_seq_rot[-1][:])
-
-                # Start tree-chaining with the end of the rotation move
-                self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos[2])
-                self.next_seed = np.copy(x_seq_rot[-1])
+                    self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos[2])
+                    self.next_seed = np.copy(x_seq_rot[-1])
+                else:
+                    self.next_runtime = params.basic_duration
+                    self.next_seed = np.copy(self.state)
 
             else:
                 self.next_runtime = params.basic_duration
@@ -279,7 +281,10 @@ class LQRRT_Node(object):
         self.get_ref = lambda t: remain
         self.get_eff = lambda t: np.zeros(3)
         print("\nDone!\n")
-        self.move_server.set_succeeded(MoveResult())
+        if self.goal_infeasible:
+            self.move_server.set_succeeded(MoveResult("infeasible"))
+        else:
+            self.move_server.set_succeeded(MoveResult())
         self.done = True
         return True
 
@@ -564,9 +569,8 @@ class LQRRT_Node(object):
             else:
                 return([b, b, 1, 0, 0, 1], ss, gs)
 
-        # For car-ing, just don't bias too much
+        # For car-ing... be careful not to bias too much
         if self.behavior is car:
-            b = np.clip(b, 0, 0.75)
             return([b, b, 0, 0, 0.5, 0], ss, gs)
 
         # (debug)
@@ -607,7 +611,9 @@ class LQRRT_Node(object):
     def reevaluate_plan(self):
         """
         Iterates through the current plan re-checking for
-        feasibility using the newest ogrid data.
+        feasibility using the newest ogrid data, looking for
+        a clear path if we are escaping, and checking that
+        the goal is still feasible.
 
         """
         # Make sure we are not already fixing the plan
@@ -621,7 +627,27 @@ class LQRRT_Node(object):
         # Timesteps since last update
         iters_passed = int((self.rostime() - self.last_update_time) / params.dt)
 
-        # Check that all points in the plan are still feasible
+        # Make sure that the goal pose is still feasible
+        if not self.is_feasible(self.goal, np.zeros(3)):
+            print("\nThe given goal is infeasible!\nGoing nearby instead.")
+            self.time_till_issue = np.inf
+            self.goal_infeasible = True
+            start = self.get_ref(0)
+            p_err = self.goal[:2] - start[:2]
+            npoints = npl.norm(p_err) / params.vps_spacing
+            xline = np.linspace(self.goal[0], start[0], npoints)
+            yline = np.linspace(self.goal[1], start[1], npoints)
+            hline = [np.arctan2(p_err[1], p_err[0])] * npoints
+            sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
+            for x in sline:
+                if self.is_feasible(x, np.zeros(3)):
+                    self.set_goal(x)
+                    break
+            for behavior in self.behaviors_list:
+                behavior.planner.kill_update()
+            return
+
+        # Check that all points in the current plan are still feasible
         p_seq = np.copy(self.x_seq[iters_passed:])
         if len(p_seq):
             p_seq[:, 3:] = 0
