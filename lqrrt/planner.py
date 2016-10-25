@@ -13,10 +13,18 @@ import time
 
 import numpy as np
 import numpy.linalg as npl
-from scipy.interpolate import interp1d
 
 from tree import Tree
 from constraints import Constraints
+
+# Check scipy version for assume_sorted argument in interp1d
+import scipy.interpolate
+if int(scipy.__version__.split('.')[1]) < 16:
+    def interp1d(*args, **kwargs):
+        kwargs.pop('assume_sorted', None)
+        return scipy.interpolate.interp1d(*args, **kwargs)
+else:
+    interp1d = scipy.interpolate.interp1d
 
 ################################################# PRIMARY CLASS
 
@@ -85,7 +93,7 @@ class Planner:
                  goal0=None, sys_time=time.time, printing=True):
 
         self.set_system(dynamics, lqr, constraints, erf)
-        
+
         self.set_resolution(horizon, dt, FPR, CPF, error_tol)
 
         self.set_runtime(min_time, max_time, max_nodes, sys_time)
@@ -359,18 +367,18 @@ class Planner:
         x = np.copy(self.tree.state[ID])
         x_seq = []; u_seq = []
         last_emag = np.inf
-        
+
         # Management
         i = 0; elapsed_time = 0
         start_time = self.sys_time()
-        
+
         # Simulate
         while True:
 
             # Compute effort using local LQR policy
             e = self.erf(np.copy(xtar), np.copy(x))
             u = K.dot(e)
-            
+
             # Step forward dynamics
             x = self.dynamics(np.copy(x), np.copy(u), self.dt)
 
@@ -389,16 +397,16 @@ class Planner:
                     if self.printing:
                         print("(exact goal-convergence timed-out)")
                     break
-                
+
                 # Definite convergence criteria
                 if np.allclose(x, xtar, rtol=1E-4, atol=1E-4):
                     break
-            
+
             # or check lenient-arrive finish criteria
             else:
                 i += 1
                 emag = np.abs(e)
-                
+
                 # "Reachability" heuristic
                 if self.rfactor:
                     if np.all(emag >= last_emag):
@@ -408,7 +416,7 @@ class Planner:
                     if i == self.horizon_iters:
                         self.horizon_iters = int(np.clip(self.rfactor*self.horizon_iters, 1, 1/self.dt))
                     last_emag = emag
-                
+
                 # Horizon, or tolerable convergence criteria
                 if i > self.horizon_iters or np.all(emag <= self.error_tol):
                     break
@@ -463,11 +471,11 @@ class Planner:
                 self.goal = np.array(goal, dtype=np.float64)
             else:
                 raise ValueError("The goal state must have same dimensionality as state space.")
-            
+
             goal_region = []
             for i, buff in enumerate(self.constraints.goal_buffer):
                 goal_region.append((self.goal[i]-buff, self.goal[i]+buff))
-            
+
             self.goal_region = goal_region
             self.plan_reached_goal = False
 

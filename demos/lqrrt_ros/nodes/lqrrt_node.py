@@ -12,8 +12,7 @@ for moving the reference to some goal (Move.action).
 from __future__ import division
 import numpy as np
 import numpy.linalg as npl
-from scipy.interpolate import interp1d
-import cv2
+import cv2  # for occupancy grid analysis
 
 import rospy
 import actionlib
@@ -25,6 +24,15 @@ from geometry_msgs.msg import Point32, PointStamped, Pose, PoseArray, \
 
 from behaviors import params, car, boat, escape
 from lqrrt_ros.msg import MoveAction, MoveFeedback, MoveResult
+
+# Check scipy version for assume_sorted argument in interp1d
+import scipy.interpolate
+if int(scipy.__version__.split('.')[1]) < 16:
+    def interp1d(*args, **kwargs):
+        kwargs.pop('assume_sorted', None)
+        return scipy.interpolate.interp1d(*args, **kwargs)
+else:
+    interp1d = scipy.interpolate.interp1d
 
 ################################################# INITIALIZATIONS
 
@@ -675,6 +683,7 @@ class LQRRT_Node(object):
            self.next_runtime is not None and self.last_update_time is not None:
             self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
                                                            self.tree.size,
+                                                           self.enroute_behavior.planner.plan_reached_goal,
                                                            self.tracking,
                                                            self.next_runtime - (self.rostime() - self.last_update_time)))
 
