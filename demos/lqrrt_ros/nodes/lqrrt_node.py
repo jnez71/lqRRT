@@ -12,6 +12,7 @@ for moving the reference to some goal (Move.action).
 from __future__ import division
 import numpy as np
 import numpy.linalg as npl
+import cv2  # for occupancy grid analysis
 
 import rospy
 import actionlib
@@ -24,9 +25,8 @@ from geometry_msgs.msg import Point32, PointStamped, Pose, PoseArray, \
 from behaviors import params, car, boat, escape
 from lqrrt_ros.msg import MoveAction, MoveFeedback, MoveResult
 
-
-# Check for scipy version to fix assume_sorted keyword arguments
-import scipy
+# Check scipy version for assume_sorted argument in interp1d
+import scipy.interpolate
 if int(scipy.__version__.split('.')[1]) < 16:
     def interp1d(*args, **kwargs):
         kwargs.pop('assume_sorted', None)
