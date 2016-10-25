@@ -683,7 +683,7 @@ class LQRRT_Node(object):
            self.next_runtime is not None and self.last_update_time is not None:
             self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
                                                            self.tree.size,
-                                                           self.behavior.planner.plan_reached_goal,
+                                                           self.enroute_behavior.planner.plan_reached_goal,
                                                            self.tracking,
                                                            self.next_runtime - (self.rostime() - self.last_update_time)))
 
