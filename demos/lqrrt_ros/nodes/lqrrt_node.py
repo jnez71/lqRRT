@@ -555,6 +555,7 @@ class LQRRT_Node(object):
         else:
             b = 1
             gs = np.copy(self.goal)
+            ss = self.behavior.gen_ss(self.next_seed, self.goal)
 
         # For boating, no focus means hold goal orientation
         if self.behavior is boat:
