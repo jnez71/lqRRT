@@ -13,20 +13,18 @@ import time
 
 import numpy as np
 import numpy.linalg as npl
-#from scipy.interpolate import interp1d
 
 from tree import Tree
 from constraints import Constraints
 
-# Check for scipy version to fix assume_sorted keyword arguments
-import scipy
-from scipy.interpolate import interp1d as _interp1d
+# Check scipy version for assume_sorted argument in interp1d
+import scipy.interpolate
 if int(scipy.__version__.split('.')[1]) < 16:
     def interp1d(*args, **kwargs):
         kwargs.pop('assume_sorted', None)
-        return _interp1d(*args, **kwargs)
+        return scipy.interpolate.interp1d(*args, **kwargs)
 else:
-    interp1d = _interp1d
+    interp1d = scipy.interpolate.interp1d
 
 ################################################# PRIMARY CLASS
 
