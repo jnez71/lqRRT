@@ -219,10 +219,9 @@ class LQRRT_Node(object):
                 x_seq_rot, T_rot, rot_success, u_seq_rot = self.rotation_move(self.state, h_goal, params.pointshoot_tol, dt_rot)
                 print("Rotating towards goal (duration: {})".format(np.round(T_rot, 2)))
 
-                # If rotation failed, switch to skid
+                # Things to do if rotation failed
                 if not rot_success:
-                    print("\nCannot rotate completely!\nSwitching move_type to skid.")
-                    self.move_type = 'skid'
+                    print("\nCannot rotate completely!")
 
                 # Begin interpolating rotation move
                 self.last_update_time = self.rostime()
@@ -464,7 +463,7 @@ class LQRRT_Node(object):
                 return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
             # Initializations
-            while_break_flag = False
+            found_entry = False
             push = [0, 0, 0, 0]
             npush = 0
             gs = np.copy(self.goal)
@@ -475,17 +474,22 @@ class LQRRT_Node(object):
 
             # Iteratively determine how much to push out the sample space
             while np.all(np.less_equal(push, len(occ_img_dial))):
-                if while_break_flag:
+                if found_entry:
                     break
 
                 # Find dividing boundary points
                 bpts = self.boundary_analysis(ss_img, ss_seed, ss_goal)
 
-                # No boundary points means time to end
-                if len(bpts) == 0:
+                # If already connected, no expansion necessary
+                if bpts == 'connected':
+                    found_entry = True
                     break
 
-                # Flags
+                # If impossible to connect, no sense in expanding
+                if bpts == 'isolated':
+                    break
+
+                # Otherwise, prepare to push ss based on boundary intercepts
                 push_xmin = False
                 push_xmax = False
                 push_ymin = False
@@ -539,11 +543,18 @@ class LQRRT_Node(object):
                     area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
                     if test_flood[ss_seed[1], ss_seed[0]] == 69:
                         gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
-                        while_break_flag = True
+                        found_entry = True
                         break
 
                 # Used for remembering the previous sample space coordinates
                 last_offsets = [offset_x[0], offset_y[0]]
+
+            # If we expanded to the limit and found no entry, goal is infeasible
+            if not found_entry:
+                print("\nGoal is unreachable!\nTerminating.")
+                self.goal_infeasible = True
+                self.set_goal(self.state)
+                return(1, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
             # Apply push in real coordinates
             push = np.array(push, dtype=np.float64) / self.ogrid_cpm
@@ -788,7 +799,8 @@ class LQRRT_Node(object):
     def boundary_analysis(self, img, seed, goal):
         """
         Returns a list of the two boundary points of the contour dividing seed from
-        goal in the occupancy image img (or an empty list if no boundary). Make sure
+        goal in the occupancy image img. If the seed and goal are connected, returns
+        'connected' or if they are terminally isolated, returns 'isolated'. Make sure
         seed and goal are intups and in the same pixel coordinates as img, and that
         occupied pixels have value 255 in img.
 
@@ -801,7 +813,7 @@ class LQRRT_Node(object):
         flood_goal = np.copy(img)
         area, rect = cv2.floodFill(flood_goal, np.zeros((flood_goal.shape[0]+2, flood_goal.shape[1]+2), np.uint8), goal, 96)
         if flood_goal[seed[1], seed[0]] == 96:
-            return bpts
+            return 'connected'
         
         # Filter out the dividing boundary
         flood_goal_thresh = 96*np.equal(flood_goal, 96).astype(np.uint8)
@@ -836,7 +848,13 @@ class LQRRT_Node(object):
             hood = self.get_hood(flood_seed_thresh, row, col)
             if np.any(hood == 69) and np.any(hood == 0):
                 bpts.append([row, col])
-        return bpts
+
+        # If they are not connected but there are no boundary points,
+        # they are forever isolated
+        if len(bpts) == 0:
+            return 'isolated'
+        else:
+            return bpts
 
 ################################################# PUBDUBS
 
