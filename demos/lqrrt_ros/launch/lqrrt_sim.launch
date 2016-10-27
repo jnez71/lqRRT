@@ -8,7 +8,7 @@
 
   <!-- ################################################################################ -->
 
-  <node pkg="lqrrt_ros" type="ogrid_node.py" name="ogrid_node" output="screen">
+  <node pkg="lqrrt_ros" type="ogrid_node.py" name="ogrid_node" output="screen" args=" ">
     <!-- AOgrid parameters -->
     <param name="grid_height" value="800"/>
     <param name="grid_width" value="800"/>
