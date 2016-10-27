@@ -25,12 +25,12 @@ def odom_gen(*args):
     o = odom
     o.header.frame_id = '/world'
     o.child_frame_id = '/body'
-    odom_pub.publish(o)
     body_world_tf.sendTransform((o.pose.pose.position.x, o.pose.pose.position.y, 0),
                                 (o.pose.pose.orientation.x, o.pose.pose.orientation.y, o.pose.pose.orientation.z, o.pose.pose.orientation.w),
                                 rospy.Time.now(),
                                 '/body',
                                 '/world')
+    odom_pub.publish(o)
 
 def ref_cb(msg):
     global odom
