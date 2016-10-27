@@ -556,7 +556,7 @@ class LQRRT_Node(object):
                 last_offsets = [offset_x[0], offset_y[0]]
 
             # If we expanded to the limit and found no entry (and goal is unoccupied), goal is infeasible
-            if not found_entry and not occ_img[goal[1], goal[0]]:
+            if not found_entry and self.is_feasible(self.goal, np.zeros(3)):
                 print("\nGoal is unreachable!\nTerminating.")
                 self.failure_reason = "unreachable"
                 self.set_goal(self.state)
@@ -648,14 +648,14 @@ class LQRRT_Node(object):
             self.failure_reason = "occupied"
             start = self.get_ref(0)
             p_err = self.goal[:2] - start[:2]
-            npoints = npl.norm(p_err) / params.vps_spacing
+            npoints = npl.norm(p_err) / (params.boat_length/2)
             xline = np.linspace(self.goal[0], start[0], npoints)
             yline = np.linspace(self.goal[1], start[1], npoints)
             hline = [np.arctan2(p_err[1], p_err[0])] * npoints
             sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
-            for x in sline:
+            for i, x in enumerate(sline[:-1]):
                 if self.is_feasible(x, np.zeros(3)):
-                    self.set_goal(x)
+                    self.set_goal(sline[i+1])
                     break
             for behavior in self.behaviors_list:
                 behavior.planner.kill_update()
