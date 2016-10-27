@@ -331,7 +331,7 @@ class LQRRT_Node(object):
             self.guide = np.copy(self.goal)
 
         # Special first-move case
-        if self.move_number == 0:
+        if self.move_number == 0 and self.initial_plan_time > self.next_runtime:
             self.next_runtime = self.initial_plan_time
 
         # (debug)
