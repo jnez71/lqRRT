@@ -10,11 +10,3 @@ Feel free to take the lqrrt.rviz file out of that folder and put it in your home
 
 Enjoy!  
 -Jason Nezvadovitz
-
-
-TO-DO: 
-- finish implementing circle driving for ROS demo
-- finish more elaborate readme
-- lots of beta testing
-- figure out star part of algorithm
-- more plan-reevaluation heuristics for ROS demo
