@@ -14,6 +14,6 @@ string failure_reason
 
 string behavior
 int64 tree_size
-bool plan_reached_goal
 bool tracking
+float64[] distance
 float64 time_till_next_branch
