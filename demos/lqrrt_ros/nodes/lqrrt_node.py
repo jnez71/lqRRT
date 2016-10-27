@@ -122,7 +122,7 @@ class LQRRT_Node(object):
         self.next_runtime = None
         self.next_seed = None
         self.time_till_issue = None
-        self.goal_infeasible = False
+        self.failure_reason = ""
         self.preempted = False
 
         # Unkill all planners
@@ -280,10 +280,7 @@ class LQRRT_Node(object):
         self.get_ref = lambda t: remain
         self.get_eff = lambda t: np.zeros(3)
         print("\nDone!\n")
-        if self.goal_infeasible:
-            self.move_server.set_succeeded(MoveResult("infeasible"))
-        else:
-            self.move_server.set_succeeded(MoveResult())
+        self.move_server.set_succeeded(MoveResult(self.failure_reason))
         self.done = True
         return True
 
@@ -549,10 +546,10 @@ class LQRRT_Node(object):
                 # Used for remembering the previous sample space coordinates
                 last_offsets = [offset_x[0], offset_y[0]]
 
-            # If we expanded to the limit and found no entry, goal is infeasible
-            if not found_entry:
+            # If we expanded to the limit and found no entry (and goal is unoccupied), goal is infeasible
+            if not found_entry and not occ_img[goal[1], goal[0]]:
                 print("\nGoal is unreachable!\nTerminating.")
-                self.goal_infeasible = True
+                self.failure_reason = "unreachable"
                 self.set_goal(self.state)
                 return(1, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
@@ -640,9 +637,9 @@ class LQRRT_Node(object):
 
         # Make sure that the goal pose is still feasible
         if not self.is_feasible(self.goal, np.zeros(3)):
-            print("\nThe given goal is infeasible!\nGoing nearby instead.")
+            print("\nThe given goal is occupied!\nGoing nearby instead.")
             self.time_till_issue = np.inf
-            self.goal_infeasible = True
+            self.failure_reason = "occupied"
             start = self.get_ref(0)
             p_err = self.goal[:2] - start[:2]
             npoints = npl.norm(p_err) / params.vps_spacing
