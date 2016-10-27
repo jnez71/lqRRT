@@ -124,6 +124,8 @@ class LQRRT_Node(object):
         self.time_till_issue = None
         self.failure_reason = ""
         self.preempted = False
+        self.move_number = 0
+        self.initial_plan_time = params.basic_duration
 
         # Unkill all planners
         for behavior in self.behaviors_list:
@@ -153,6 +155,10 @@ class LQRRT_Node(object):
 
         # Give desired pose to everyone who needs it
         self.set_goal(self.unpack_pose(msg.goal))
+
+        # Store the initial planning time if specified
+        if msg.initial_plan_time > 0:
+            self.initial_plan_time = msg.initial_plan_time
 
         # Check given move_type
         if msg.move_type in ['hold', 'drive', 'skid', 'circle']:
@@ -248,16 +254,15 @@ class LQRRT_Node(object):
         # (debug)
         assert self.next_seed is not None
         assert self.next_runtime is not None
-        move_number = 0
 
         # Begin tree-chaining loop
         while not rospy.is_shutdown():
             clean_update = self.tree_chain()
-            move_number += 1
+            self.move_number += 1
 
             # Print feedback
             if clean_update and not self.stuck and not self.preempted:
-                print("\nMove {}\n----".format(move_number))
+                print("\nMove {}\n----".format(self.move_number))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
                 print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
@@ -324,6 +329,10 @@ class LQRRT_Node(object):
             self.goal_bias = 0
             self.sample_space = escape.gen_ss(self.next_seed, self.goal)
             self.guide = np.copy(self.goal)
+
+        # Special first-move case
+        if self.move_number == 0:
+            self.next_runtime = self.initial_plan_time
 
         # (debug)
         if self.stuck and self.time_till_issue is None:

@@ -3,6 +3,7 @@
 geometry_msgs/Pose goal
 string move_type  # 'hold', 'drive', 'skid', 'circle'
 geometry_msgs/Point focus
+float64 initial_plan_time
 
 ---
 # Result
