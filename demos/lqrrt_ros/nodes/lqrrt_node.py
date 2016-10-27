@@ -633,12 +633,9 @@ class LQRRT_Node(object):
         the goal is still feasible.
 
         """
-        # Make sure we are not already fixing the plan
-        if self.time_till_issue is not None:
-            return
-
-        # Make sure a plan exists
-        if self.last_update_time is None or self.x_seq is None:
+        # Make sure a plan exists and that we aren't currently fixing it
+        if self.last_update_time is None or self.x_seq is None \
+           or self.done or self.time_till_issue is not None:
             return
 
         # Timesteps since last update
