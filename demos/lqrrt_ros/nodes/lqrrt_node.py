@@ -546,11 +546,22 @@ class LQRRT_Node(object):
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
                     test_flood = np.copy(ss_img)
-                    area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
-                    if test_flood[ss_seed[1], ss_seed[0]] == 69:
-                        gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
-                        found_entry = True
-                        break
+                    try:
+                        area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
+                        if test_flood[ss_seed[1], ss_seed[0]] == 69:
+                            gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
+                            found_entry = True
+                            break
+                    except:
+                        print("\nA sample space image during select_exploration may have become degenerate. How odd.")
+                        print("type(ss_img): {}".format(type(ss_img)))
+                        print("np.shape(ss_img): {}".format(np.shape(ss_img)))
+                        print("current push: {}".format(push))
+                        print("ss_goal: {}".format(ss_goal))
+                        print("\nTerminating.")
+                        self.failure_reason = "glitch"
+                        self.set_goal(self.state)
+                        return(1, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
                 # Used for remembering the previous sample space coordinates
                 last_offsets = [offset_x[0], offset_y[0]]
