@@ -18,6 +18,7 @@ basic_duration = 1  # s
 free_radius = 6  # m
 stuck_threshold = 2
 fudge_factor = 0.80
+collision_time_threshold = 0.3  # s
 
 ################################################# TREE GROWTH
 
