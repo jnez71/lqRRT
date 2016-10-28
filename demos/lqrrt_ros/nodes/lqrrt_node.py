@@ -51,7 +51,7 @@ class LQRRT_Node(object):
         self.ogrid_threshold = float(ogrid_threshold)
         self.state = None
         self.tracking = None
-        self.busy = False
+        self.growing_tree = False
         self.done = True
 
         # Lil helpers
@@ -114,18 +114,22 @@ class LQRRT_Node(object):
         self.goal_bias = None
         self.sample_space = None
         self.guide = None
-        self.stuck = False
-        self.stuck_count = 0
 
         # Planning control
         self.last_update_time = None
         self.next_runtime = None
         self.next_seed = None
-        self.time_till_issue = None
-        self.failure_reason = ""
-        self.preempted = False
         self.move_number = 0
         self.initial_plan_time = params.basic_duration
+
+        # Issue control
+        self.stuck = False
+        self.stuck_count = 0
+        self.time_till_issue = None
+        self.failure_reason = ''
+        self.preempted = False
+        self.unreachable = False
+        self.collided = False
 
         # Unkill all planners
         for behavior in self.behaviors_list:
@@ -140,6 +144,7 @@ class LQRRT_Node(object):
         """
         # Main callback flag
         self.done = False
+        print("="*50)
 
         # Make sure odom is publishing (well, at least once)
         if self.state is None:
@@ -147,8 +152,13 @@ class LQRRT_Node(object):
             self.move_server.set_aborted(MoveResult('odom'))
             self.done = True
             return False
-        else:
-            print("="*50)
+
+        # Make sure we are not already in a collided state
+        if not self.is_feasible(self.state, np.zeros(3)):
+            print("Can't move. Already collided.\n")
+            self.move_server.set_aborted(MoveResult('collided'))
+            self.done = True
+            return False
 
         # Reset the planner system for safety
         self.reset()
@@ -261,7 +271,7 @@ class LQRRT_Node(object):
             self.move_number += 1
 
             # Print feedback
-            if clean_update and not self.stuck and not self.preempted:
+            if clean_update and not self.stuck and not self.preempted and not self.unreachable:
                 print("\nMove {}\n----".format(self.move_number))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
@@ -273,10 +283,27 @@ class LQRRT_Node(object):
             if np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
                 break
 
+            # Fail if collided
+            if self.collided:
+                print("\nTerminated.\n")
+                self.move_server.set_aborted(MoveResult('collided'))
+                self.reset()
+                self.done = True
+                return False
+
             # Check for abrupt termination
             if self.preempted:
-                print("\nTerminated.")
+                print("\nTerminated.\n")
                 self.move_server.set_preempted()
+                self.reset()
+                self.done = True
+                return False
+
+            # Check if goal is unreachable
+            if self.unreachable:
+                print("\nTerminated.\n")
+                self.move_server.set_aborted(MoveResult('unreachable'))
+                self.reset()
                 self.done = True
                 return False
 
@@ -297,12 +324,12 @@ class LQRRT_Node(object):
         another lqRRT when called again.
 
         """
-        # Make sure we are not currently in an update
-        if self.busy:
-            return
+        # Make sure we are not currently in an update or a collided state
+        if self.growing_tree or self.collided:
+            return False
 
         # Thread locking, lol
-        self.busy = True
+        self.growing_tree = True
 
         # No issue
         if self.time_till_issue is None:
@@ -383,15 +410,12 @@ class LQRRT_Node(object):
             self.publish_path()
             self.publish_expl()
 
-        else:
-            print("Update cancelled.")
-
         # Make sure all planners are actually unkilled
         for behavior in self.behaviors_list:
             behavior.planner.unkill()
 
         # Unlocking, lol
-        self.busy = False
+        self.growing_tree = False
 
         return clean_update
 
@@ -470,7 +494,7 @@ class LQRRT_Node(object):
 
             # Initializations
             found_entry = False
-            push = [0, 0, 0, 0]
+            push = (self.ogrid_cpm*np.array([params.ss_start]*4)).astype(np.int64)
             npush = 0
             gs = np.copy(self.goal)
             last_offsets = [pmin[0], pmin[1]]
@@ -482,6 +506,10 @@ class LQRRT_Node(object):
             while np.all(np.less_equal(push, len(occ_img_dial))):
                 if found_entry:
                     break
+
+                # In case we collide or get preempted while in this loop
+                if self.collided or self.preempted:
+                    return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
                 # Find dividing boundary points
                 bpts = self.boundary_analysis(ss_img, ss_seed, ss_goal)
@@ -546,22 +574,11 @@ class LQRRT_Node(object):
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
                     test_flood = np.copy(ss_img)
-                    try:
-                        area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
-                        if test_flood[ss_seed[1], ss_seed[0]] == 69:
-                            gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
-                            found_entry = True
-                            break
-                    except:
-                        print("\nA sample space image during select_exploration may have become degenerate. How odd.")
-                        print("type(ss_img): {}".format(type(ss_img)))
-                        print("np.shape(ss_img): {}".format(np.shape(ss_img)))
-                        print("current push: {}".format(push))
-                        print("ss_goal: {}".format(ss_goal))
-                        print("\nTerminating.")
-                        self.failure_reason = "glitch"
-                        self.set_goal(self.state)
-                        return(1, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                    area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
+                    if test_flood[ss_seed[1], ss_seed[0]] == 69:
+                        gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
+                        found_entry = True
+                        break
 
                 # Used for remembering the previous sample space coordinates
                 last_offsets = [offset_x[0], offset_y[0]]
@@ -569,15 +586,15 @@ class LQRRT_Node(object):
             # If we expanded to the limit and found no entry (and goal is unoccupied), goal is infeasible
             if not found_entry and self.is_feasible(self.goal, np.zeros(3)):
                 print("\nGoal is unreachable!\nTerminating.")
-                self.failure_reason = "unreachable"
-                self.set_goal(self.state)
-                return(1, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                self.failure_reason = 'unreachable'
+                self.unreachable = True
+                return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
             # Apply push in real coordinates
             push = np.array(push, dtype=np.float64) / self.ogrid_cpm
             if npush > 0:
                 push += params.boat_length
-            ss = self.behavior.gen_ss(self.next_seed, self.goal, push + 4*[params.ss_start])
+            ss = self.behavior.gen_ss(self.next_seed, self.goal, push + [params.ss_start]*4)
 
             # Select bias based on density of ogrid in sample space
             if ss_img.size:
@@ -656,12 +673,11 @@ class LQRRT_Node(object):
         if not self.is_feasible(self.goal, np.zeros(3)):
             print("\nThe given goal is occupied!\nGoing nearby instead.")
             self.time_till_issue = np.inf
-            self.failure_reason = "occupied"
-            start = self.get_ref(0)
-            p_err = self.goal[:2] - start[:2]
+            self.failure_reason = 'occupied'
+            p_err = self.goal[:2] - self.state[:2]
             npoints = npl.norm(p_err) / (params.boat_length/2)
-            xline = np.linspace(self.goal[0], start[0], npoints)
-            yline = np.linspace(self.goal[1], start[1], npoints)
+            xline = np.linspace(self.goal[0], self.state[0], npoints)
+            yline = np.linspace(self.goal[1], self.state[1], npoints)
             hline = [np.arctan2(p_err[1], p_err[0])] * npoints
             sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
             for i, x in enumerate(sline[:-1]):
@@ -679,10 +695,18 @@ class LQRRT_Node(object):
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
                 if not self.is_feasible(x, u):
                     self.time_till_issue = i*params.dt
+                    if self.time_till_issue < params.collision_time_threshold:
+                        if not self.collided:
+                            print("\nCollided! (*seppuku*)")
+                            self.collided = True
+                    else:
+                        print("\nFound collision on current path!\nTime till collision: {}".format(self.time_till_issue))
                     for behavior in self.behaviors_list:
                         behavior.planner.kill_update()
-                    print("\nFound collision on current path!\nTime till collision: {}".format(self.time_till_issue))
                     return
+        if self.collided:
+            print("\nNo longer collided! (*unseppuku*)")
+            self.collided = False
 
         # If we are escaping, check if we have a clear path again
         if self.enroute_behavior is escape:
@@ -718,7 +742,7 @@ class LQRRT_Node(object):
         if self.preempted or not self.move_server.is_active():
             return
 
-        if self.move_server.is_preempt_requested() or (rospy.is_shutdown() and self.busy):
+        if self.move_server.is_preempt_requested() or (rospy.is_shutdown() and self.growing_tree):
             self.preempted = True
             print("\nAction preempted!")
             if self.behavior is not None:
@@ -727,8 +751,6 @@ class LQRRT_Node(object):
                     behavior.planner.kill_update()
                 while not self.done:
                     rospy.sleep(0.1)
-            print("\n")
-            self.reset()
             return
 
         if self.enroute_behavior is not None and self.tree is not None and self.tracking is not None and \
@@ -874,7 +896,8 @@ class LQRRT_Node(object):
 
     def set_goal(self, x):
         """
-        Gives a goal state x out to everyone who needs it.
+        Gives a goal state x out to everyone who needs it and echos
+        it as a PoseStamped message.
 
         """
         self.goal = np.copy(x)
@@ -885,7 +908,8 @@ class LQRRT_Node(object):
 
     def publish_ref(self, *args):
         """
-        Publishes the reference trajectory as an Odometry message.
+        Publishes the reference trajectory as an Odometry message,
+        and reference effort as a WrenchStamped message.
 
         """
         # Make sure a plan exists
@@ -899,7 +923,7 @@ class LQRRT_Node(object):
         # Publish interpolated reference
         self.ref_pub.publish(self.pack_odom(self.get_ref(T), stamp))
 
-        # Not really necessary, but for fun also publish the planner's effort wrench
+        # Not really necessary, but for fun-and-profit also publish the planner's effort wrench
         if self.get_eff is not None:
             self.eff_pub.publish(self.pack_wrenchstamped(self.get_eff(T), stamp))
 
