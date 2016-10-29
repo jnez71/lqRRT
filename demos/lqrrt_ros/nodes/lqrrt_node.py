@@ -4,9 +4,8 @@ Example of a ROS node that uses lqRRT for a big boat.
 
 This node subscribes to the current boat state (Odometry message),
 and the world-frame ogrid (OccupancyGrid message). It publishes the
-REFerence trajectory that moves to the goal as an Odometry message, as
-well as the path and tree as PoseArray messages. An action is provided
-for moving the reference to some goal (Move.action).
+REFerence trajectory that moves to the goal, as an Odometry message.
+It provides an action for moving said reference to that goal (Move.action).
 
 """
 from __future__ import division
@@ -193,6 +192,7 @@ class LQRRT_Node(object):
                 self.set_goal(focus_goal)
                 self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
                 print("Focused on: {}".format(boat.focus[:2]))
+
         elif self.move_type == 'circle':
             boat.focus = np.array([msg.focus.x, msg.focus.y, msg.focus.z])
             self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
@@ -200,6 +200,7 @@ class LQRRT_Node(object):
                 print("Focused on: {}, counterclockwise".format(boat.focus[:2]))
             else:
                 print("Focused on: {}, clockwise".format(boat.focus[:2]))
+
         else:
             boat.focus = None
             self.focus_pub.publish(self.pack_pointstamped([1E6, 1E6, 1E6], rospy.Time.now()))
@@ -210,8 +211,8 @@ class LQRRT_Node(object):
             self.last_update_time = self.rostime()
             self.get_ref = lambda t: self.goal
             self.get_eff = lambda t: np.zeros(3)
-            self.move_server.set_succeeded(MoveResult())
             print("\nDone!\n")
+            self.move_server.set_succeeded(MoveResult(self.failure_reason))
             self.done = True
             return True
 
@@ -271,7 +272,7 @@ class LQRRT_Node(object):
             self.move_number += 1
 
             # Print feedback
-            if clean_update and not self.stuck and not self.preempted and not self.unreachable:
+            if clean_update and self.failure_reason == '' and not self.stuck:
                 print("\nMove {}\n----".format(self.move_number))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
@@ -281,40 +282,23 @@ class LQRRT_Node(object):
 
             # Check if action goal is complete
             if np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
-                break
+                remain = np.copy(self.goal)
+                self.get_ref = lambda t: remain
+                self.get_eff = lambda t: np.zeros(3)
+                print("\nDone!\n")
+                self.move_server.set_succeeded(MoveResult(self.failure_reason))
+                self.done = True
+                return True
 
-            # Fail if collided
-            if self.collided:
+            # Check for abrupt termination, collision, or unreachability
+            if self.preempted or self.collided or self.unreachable:
+                remain = np.copy(np.concatenate((self.state[:3], np.zeros(3))))
+                self.get_ref = lambda t: remain
+                self.get_eff = lambda t: np.zeros(3)
                 print("\nTerminated.\n")
-                self.move_server.set_aborted(MoveResult('collided'))
-                self.reset()
+                self.move_server.set_aborted(MoveResult(self.failure_reason))
                 self.done = True
                 return False
-
-            # Check for abrupt termination
-            if self.preempted:
-                print("\nTerminated.\n")
-                self.move_server.set_preempted()
-                self.reset()
-                self.done = True
-                return False
-
-            # Check if goal is unreachable
-            if self.unreachable:
-                print("\nTerminated.\n")
-                self.move_server.set_aborted(MoveResult('unreachable'))
-                self.reset()
-                self.done = True
-                return False
-
-        # Over and out!
-        remain = np.copy(self.goal)
-        self.get_ref = lambda t: remain
-        self.get_eff = lambda t: np.zeros(3)
-        print("\nDone!\n")
-        self.move_server.set_succeeded(MoveResult(self.failure_reason))
-        self.done = True
-        return True
 
 ################################################# WHERE IT HAPPENS
 
@@ -494,7 +478,7 @@ class LQRRT_Node(object):
 
             # Initializations
             found_entry = False
-            push = (self.ogrid_cpm*np.array([params.ss_start]*4)).astype(np.int64)
+            push = [0, 0, 0, 0]
             npush = 0
             gs = np.copy(self.goal)
             last_offsets = [pmin[0], pmin[1]]
@@ -506,10 +490,6 @@ class LQRRT_Node(object):
             while np.all(np.less_equal(push, len(occ_img_dial))):
                 if found_entry:
                     break
-
-                # In case we collide or get preempted while in this loop
-                if self.collided or self.preempted:
-                    return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
                 # Find dividing boundary points
                 bpts = self.boundary_analysis(ss_img, ss_seed, ss_goal)
@@ -571,6 +551,9 @@ class LQRRT_Node(object):
                     offset_x = (pmin[0]-push[0], pmax[0]+push[1])
                     offset_y = (pmin[1]-push[2], pmax[1]+push[3])
                     ss_img = np.copy(occ_img_dial[offset_y[0]:offset_y[1], offset_x[0]:offset_x[1]])
+                    if np.any(np.equal(ss_img.shape, 0)):
+                        print("\nOccupancy grid analysis failed...")
+                        return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
                     test_flood = np.copy(ss_img)
@@ -585,9 +568,9 @@ class LQRRT_Node(object):
 
             # If we expanded to the limit and found no entry (and goal is unoccupied), goal is infeasible
             if not found_entry and self.is_feasible(self.goal, np.zeros(3)):
-                print("\nGoal is unreachable!\nTerminating.")
-                self.failure_reason = 'unreachable'
+                print("\nGoal is unreachable!")
                 self.unreachable = True
+                self.failure_reason = 'unreachable'
                 return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
 
             # Apply push in real coordinates
@@ -694,19 +677,23 @@ class LQRRT_Node(object):
             p_seq[:, 3:] = 0
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
                 if not self.is_feasible(x, u):
-                    self.time_till_issue = i*params.dt
-                    if self.time_till_issue < params.collision_time_threshold:
+                    time_till_collision = i*params.dt
+                    if time_till_collision < params.collision_time_threshold:
                         if not self.collided:
                             print("\nCollided! (*seppuku*)")
                             self.collided = True
+                            self.failure_reason = 'collided'
                     else:
-                        print("\nFound collision on current path!\nTime till collision: {}".format(self.time_till_issue))
+                        print("\nFound collision on current path!\nTime till collision: {}".format(time_till_collision))
+                        self.time_till_issue = time_till_collision
                     for behavior in self.behaviors_list:
                         behavior.planner.kill_update()
                     return
         if self.collided:
             print("\nNo longer collided! (*unseppuku*)")
             self.collided = False
+            if self.failure_reason == 'collided':
+                self.failure_reason = ''
 
         # If we are escaping, check if we have a clear path again
         if self.enroute_behavior is escape:
@@ -744,6 +731,7 @@ class LQRRT_Node(object):
 
         if self.move_server.is_preempt_requested() or (rospy.is_shutdown() and self.growing_tree):
             self.preempted = True
+            self.failure_reason = 'preempted'
             print("\nAction preempted!")
             if self.behavior is not None:
                 print("Killing planners.")
