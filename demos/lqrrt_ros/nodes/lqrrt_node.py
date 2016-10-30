@@ -444,11 +444,14 @@ class LQRRT_Node(object):
         """
         # Escaping means maximal exploration
         if self.behavior is escape:
-            gs = np.copy(self.goal)
-            vec = self.goal[:2] - self.next_seed[:2]
-            dist = npl.norm(vec)
-            if dist < 2*params.free_radius:
-                gs[:2] = vec + 2*params.free_radius*(vec/dist)
+            if self.guide is None:
+                gs = np.copy(self.goal)
+                vec = self.goal[:2] - self.next_seed[:2]
+                dist = npl.norm(vec)
+                if dist < 2*params.free_radius:
+                    gs[:2] = vec + 2*params.free_radius*(vec/dist)
+            else:
+                gs = np.copy(self.guide)
             return(0, escape.gen_ss(self.next_seed, self.goal), gs)
 
         # Analyze ogrid to find good bias and sample space buffer
@@ -478,7 +481,7 @@ class LQRRT_Node(object):
                 occ_img_dial[goal[1], goal[0]]
             except IndexError:
                 print("Goal and/or seed out of bounds of occupancy grid!")
-                return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal))
 
             # Initializations
             found_entry = False
@@ -557,6 +560,7 @@ class LQRRT_Node(object):
                     ss_img = np.copy(occ_img_dial[offset_y[0]:offset_y[1], offset_x[0]:offset_x[1]])
                     if np.any(np.equal(ss_img.shape, 0)):
                         print("\nOccupancy grid analysis failed... Please report this!")
+                        self.behavior = escape
                         return(0.5, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
@@ -636,7 +640,6 @@ class LQRRT_Node(object):
         try:
             grid_values = self.ogrid[indicies[:, 1], indicies[:, 0]]
         except IndexError:
-            print("WOAH NELLY! Search exceeded ogrid size.")
             return False
 
         # Greater than threshold is a hit
