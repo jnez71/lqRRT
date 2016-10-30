@@ -52,10 +52,6 @@ class Planner:
     FPR: Failed Path Retention factor. When a path is grown and found to be infeasible,
          this is the fraction of the path that is retained up to that infeasible point.
 
-    CPF: Connection Potential Factor. When the growth must be ended but the goal region
-         hasn't been reached, the path to the best node is used where best is judged
-         by potential to steer to the goal. This multiplies that steer's horizon.
-
     error_tol: The state error array or scalar defining controller convergence.
 
     erf: Function that takes two states xgoal and x and returns the state error
@@ -87,14 +83,14 @@ class Planner:
 
     """
     def __init__(self, dynamics, lqr, constraints,
-                 horizon, dt=0.05, FPR=0, CPF=2,
+                 horizon, dt=0.05, FPR=0,
                  error_tol=0.05, erf=np.subtract,
                  min_time=0.5, max_time=1, max_nodes=1E5,
                  goal0=None, sys_time=time.time, printing=True):
 
         self.set_system(dynamics, lqr, constraints, erf)
 
-        self.set_resolution(horizon, dt, FPR, CPF, error_tol)
+        self.set_resolution(horizon, dt, FPR, error_tol)
 
         self.set_runtime(min_time, max_time, max_nodes, sys_time)
 
@@ -285,31 +281,14 @@ class Planner:
 
             # Close-out for didn't-reach-goal
             elif time_elapsed >= max_time or self.tree.size > self.max_nodes:
-                # Find close node that has the most potential to steer to the guide state
-                Sgoal = self.lqr(self.xguide, np.zeros(self.ncontrols))[0]
+                # Find closest node to guide state
+                Sguide = self.lqr(self.xguide, np.zeros(self.ncontrols))[0]
                 for i, g in enumerate(self.constraints.goal_buffer):
                     if np.isinf(g):
-                        Sgoal[:, i] = 0
-                goaldiffs = self.tree.state - self.xguide
-                closestIDs = np.argsort(np.sum(np.tensordot(goaldiffs, Sgoal, axes=1) * goaldiffs, axis=1))
-                best_dist = np.inf
-                self.horizon_iters *= self.CPF
-                for i, ID in enumerate(closestIDs[:np.ceil(0.02*self.tree.size)]):
-                    xcheck_seq, ucheck_seq = self._steer(ID, self.xguide, force_arrive=False)
-                    if len(xcheck_seq) > 1:
-                        diff = xcheck_seq[-1] - self.xguide
-                        dist = diff.dot(Sgoal.dot(diff))
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_ID = ID
-                            best_xcheck_seq = xcheck_seq
-                            best_ucheck_seq = ucheck_seq
-                self.set_resolution()
-                if not np.isinf(best_dist):
-                    self.tree.add_node(best_ID, best_xcheck_seq[-1], None, best_xcheck_seq, best_ucheck_seq)
-                    self.node_seq = self.tree.climb(self.tree.size-1)
-                else:
-                    self.node_seq = self.tree.climb(closestIDs[0])
+                        Sguide[:, i] = 0
+                guide_diffs = self.tree.state - self.xguide
+                closestID = np.argmin(np.sum(np.tensordot(guide_diffs, Sguide, axes=1) * guide_diffs, axis=1))
+                self.node_seq = self.tree.climb(closestID)
                 # Construct plan
                 self.x_seq, self.u_seq = self.tree.trajectory(self.node_seq)
                 self.T = len(self.x_seq) * self.dt
@@ -507,7 +486,7 @@ class Planner:
 
 #################################################
 
-    def set_resolution(self, horizon=None, dt=None, FPR=None, CPF=None, error_tol=None):
+    def set_resolution(self, horizon=None, dt=None, FPR=None, error_tol=None):
         """
         See class docstring for argument definitions.
         Arguments not given are not modified.
@@ -521,9 +500,6 @@ class Planner:
 
         if FPR is not None:
             self.FPR = FPR
-
-        if CPF is not None:
-            self.CPF = CPF
 
         if error_tol is not None:
             if np.shape(error_tol) in [(), (self.nstates,)]:

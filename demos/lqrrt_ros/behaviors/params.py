@@ -25,7 +25,6 @@ collision_time_threshold = 0.3  # s
 horizon = 2  # s
 dt = 0.1  # s
 FPR = 0
-CPF = 2
 ss_start = 10  # m
 ss_step = 5  # m
 max_nodes = 1E5
