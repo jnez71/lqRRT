@@ -74,7 +74,7 @@ def gen_ss(seed, goal, buff=40):
     """
     return [(seed[0] - buff, seed[0] + buff),
             (seed[1] - buff, seed[1] + buff),
-            (-np.pi, np.pi),
+            (seed[2], seed[2]),
             (-abs(velmax_neg[0]), velmax_pos[0]),
             (-abs(velmax_neg[1]), velmax_pos[1]),
             (-abs(velmax_neg[2]), velmax_pos[2])]
