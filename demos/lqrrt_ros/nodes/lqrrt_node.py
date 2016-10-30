@@ -579,6 +579,8 @@ class LQRRT_Node(object):
                 print("\nGoal is unreachable!")
                 self.unreachable = True
                 self.failure_reason = 'unreachable'
+                for behavior in self.behaviors_list:
+                    behavior.planner.kill_update()
                 return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal))
 
             # Apply push in real coordinates
@@ -753,7 +755,6 @@ class LQRRT_Node(object):
             self.failure_reason = 'preempted'
             print("\nAction preempted!")
             if self.behavior is not None:
-                print("Killing planners.")
                 for behavior in self.behaviors_list:
                     behavior.planner.kill_update()
                 while not self.done:
@@ -921,7 +922,7 @@ class LQRRT_Node(object):
 
         """
         # Make sure a plan exists
-        if self.get_ref is None:
+        if self.get_ref is None or self.last_update_time is None:
             return
 
         # Time since last update
