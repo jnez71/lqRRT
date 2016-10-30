@@ -14,11 +14,15 @@ ncontrols = 3
 
 real_tol = [0.5, 0.5, np.deg2rad(10), np.inf, np.inf, np.inf]
 pointshoot_tol = np.deg2rad(20)  # rad
-basic_duration = 1  # s
 free_radius = 6  # m
-stuck_threshold = 2
+basic_duration = 1  # s
 fudge_factor = 0.85
-collision_time_threshold = 0.3  # s
+
+################################################# ISSUE CONTROL
+
+stuck_threshold = 2  # moves
+fail_threshold = 5  # stucks
+collision_threshold = 0.3  # s
 
 ################################################# TREE GROWTH
 

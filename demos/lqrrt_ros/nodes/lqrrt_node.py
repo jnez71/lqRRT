@@ -124,6 +124,7 @@ class LQRRT_Node(object):
         # Issue control
         self.stuck = False
         self.stuck_count = 0
+        self.fail_count = 0
         self.time_till_issue = None
         self.failure_reason = ''
         self.preempted = False
@@ -364,20 +365,25 @@ class LQRRT_Node(object):
         if clean_update:
 
             # We might be stuck if tree is oddly small
-            if (self.behavior.planner.tree.size <= params.stuck_threshold or self.behavior.planner.T == params.dt) and \
-               not self.behavior.planner.plan_reached_goal and npl.norm(self.goal[:2] - self.state[:2]) > params.free_radius:
-
+            if self.behavior.planner.tree.size <= params.stuck_threshold or self.behavior.planner.T == params.dt:
                 # Increase stuck count towards threshold
                 self.stuck_count += 1
                 if self.stuck_count > params.stuck_threshold:
-                    print("\nI think we're stuck...")
-                    self.stuck = True
-                    self.stuck_count = 0
+                    self.fail_count += 1
+                    if self.fail_count > params.fail_threshold:
+                        print("\nNot making any progress.\nGoal may be unreachable.")
+                        self.unreachable = True
+                        self.failure_reason = 'unreachable'
+                    else:
+                        print("\nI think we're stuck...")
+                        self.stuck = True
+                        self.stuck_count = 0
                 else:
                     self.stuck = False
             else:
                 self.stuck = False
                 self.stuck_count = 0
+                self.fail_count = 0
 
             # Cash-in new goods
             self.x_seq = np.copy(self.behavior.planner.x_seq)
@@ -699,7 +705,7 @@ class LQRRT_Node(object):
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
                 if not self.is_feasible(x, u):
                     time_till_collision = i*params.dt
-                    if time_till_collision < params.collision_time_threshold:
+                    if time_till_collision < params.collision_threshold:
                         if not self.collided:
                             print("\nCollided! (*seppuku*)")
                             self.collided = True
@@ -720,23 +726,24 @@ class LQRRT_Node(object):
         if self.enroute_behavior is escape:
             start = self.get_ref(self.rostime() - self.last_update_time)
             p_err = self.goal[:2] - start[:2]
-            npoints = npl.norm(p_err) / params.vps_spacing
-            xline = np.linspace(start[0], self.goal[0], npoints)
-            yline = np.linspace(start[1], self.goal[1], npoints)
-            hline = [np.arctan2(p_err[1], p_err[0])] * npoints
-            sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
-            checks = []
-            for x in sline:
-                checks.append(self.is_feasible(x, np.zeros(3)))
-            if np.all(checks):
-                self.time_till_issue = np.inf
-                self.move_type = 'drive'
-                for behavior in self.behaviors_list:
-                    behavior.planner.kill_update()
-                self.stuck = False
-                self.stuck_count = 0
-                print("\nClear path found!")
-                return
+            if npl.norm(p_err) > params.free_radius:
+                npoints = npl.norm(p_err) / params.vps_spacing
+                xline = np.linspace(start[0], self.goal[0], npoints)
+                yline = np.linspace(start[1], self.goal[1], npoints)
+                hline = [np.arctan2(p_err[1], p_err[0])] * npoints
+                sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
+                checks = []
+                for x in sline:
+                    checks.append(self.is_feasible(x, np.zeros(3)))
+                if np.all(checks):
+                    self.time_till_issue = np.inf
+                    self.move_type = 'drive'
+                    for behavior in self.behaviors_list:
+                        behavior.planner.kill_update()
+                    self.stuck = False
+                    self.stuck_count = 0
+                    print("\nClear path found!")
+                    return
 
         # No concerns
         self.time_till_issue = None
