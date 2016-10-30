@@ -17,12 +17,12 @@ pointshoot_tol = np.deg2rad(20)  # rad
 basic_duration = 1  # s
 free_radius = 6  # m
 stuck_threshold = 2
-fudge_factor = 0.80
+fudge_factor = 0.85
 collision_time_threshold = 0.3  # s
 
 ################################################# TREE GROWTH
 
-horizon = 2  # s
+horizon = 0  # s, 0 == adaptive
 dt = 0.1  # s
 FPR = 0
 ss_start = 10  # m
