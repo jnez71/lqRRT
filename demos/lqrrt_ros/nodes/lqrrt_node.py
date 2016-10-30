@@ -118,7 +118,7 @@ class LQRRT_Node(object):
         self.last_update_time = None
         self.next_runtime = None
         self.next_seed = None
-        self.move_number = 0
+        self.move_count = 0
         self.initial_plan_time = params.basic_duration
 
         # Issue control
@@ -269,11 +269,11 @@ class LQRRT_Node(object):
         # Begin tree-chaining loop
         while not rospy.is_shutdown():
             clean_update = self.tree_chain()
-            self.move_number += 1
+            self.move_count += 1
 
             # Print feedback
             if clean_update and self.failure_reason == '' and not self.stuck:
-                print("\nMove {}\n----".format(self.move_number))
+                print("\nMove {}\n----".format(self.move_count))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
                 print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
@@ -342,8 +342,12 @@ class LQRRT_Node(object):
             self.guide = np.copy(self.goal)
 
         # Special first-move case
-        if self.move_number == 0 and self.initial_plan_time > self.next_runtime:
-            self.next_runtime = self.initial_plan_time
+        if self.move_count == 0:
+            if self.get_ref is not None:
+                if self.initial_plan_time > self.next_runtime:
+                    self.next_runtime = self.initial_plan_time
+            else:
+                self.next_runtime = self.initial_plan_time
 
         # (debug)
         if self.stuck and self.time_till_issue is None:
@@ -552,7 +556,7 @@ class LQRRT_Node(object):
                     offset_y = (pmin[1]-push[2], pmax[1]+push[3])
                     ss_img = np.copy(occ_img_dial[offset_y[0]:offset_y[1], offset_x[0]:offset_x[1]])
                     if np.any(np.equal(ss_img.shape, 0)):
-                        print("\nOccupancy grid analysis failed...")
+                        print("\nOccupancy grid analysis failed... Please report this!")
                         return(0.5, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
@@ -571,7 +575,7 @@ class LQRRT_Node(object):
                 print("\nGoal is unreachable!")
                 self.unreachable = True
                 self.failure_reason = 'unreachable'
-                return(0, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal))
 
             # Apply push in real coordinates
             push = np.array(push, dtype=np.float64) / self.ogrid_cpm
@@ -590,14 +594,17 @@ class LQRRT_Node(object):
             gs = np.copy(self.goal)
             ss = self.behavior.gen_ss(self.next_seed, self.goal)
 
-        # For boating, no focus means hold goal orientation
+        # For boating
         if self.behavior is boat:
             if npl.norm(self.goal[:2] - self.next_seed[:2]) < params.free_radius:
-                return([1, 1, 1, 0.1, 0.1, 0], ss, gs)
+                return([1, 1, 1, 0, 0, 0], ss, gs)
             else:
-                return([b, b, 1, 0, 0, 1], ss, gs)
+                if boat.focus is None:
+                    return([b, b, 1, 0, 0, 1], ss, gs)
+                else:
+                    return([b, b, 0, 0, 0, 0], ss, gs)
 
-        # For car-ing... be careful not to bias too much
+        # For car-ing
         if self.behavior is car:
             return([b, b, 0, 0, 0.5, 0], ss, gs)
 
@@ -667,6 +674,15 @@ class LQRRT_Node(object):
                 if self.is_feasible(x, np.zeros(3)):
                     self.set_goal(sline[i+1])
                     break
+            if boat.focus is not None and self.move_type == 'skid':
+                focus_vec = boat.focus[:2] - self.goal[:2]
+                focus_goal = np.copy(self.goal)
+                focus_goal[2] = np.arctan2(focus_vec[1], focus_vec[0])
+                if self.is_feasible(focus_goal, np.zeros(3)):
+                    self.set_goal(focus_goal)
+                else:
+                    print("Cancelling focus.")
+                    boat.focus = None
             for behavior in self.behaviors_list:
                 behavior.planner.kill_update()
             return
@@ -743,11 +759,12 @@ class LQRRT_Node(object):
 
         if self.enroute_behavior is not None and self.tree is not None and self.tracking is not None and \
            self.next_runtime is not None and self.last_update_time is not None:
+            time_till_next_branch = self.next_runtime - (self.rostime() - self.last_update_time)
             self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
                                                            self.tree.size,
                                                            self.tracking,
                                                            self.erf(self.goal, self.get_ref(self.rostime() - self.last_update_time))[:3],
-                                                           self.next_runtime - (self.rostime() - self.last_update_time)))
+                                                           time_till_next_branch))
 
 ################################################# LIL MATH DOERS
 
