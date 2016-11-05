@@ -599,6 +599,8 @@ class LQRRT_Node(object):
             if ss_img.size:
                 free_ratio = len(np.argwhere(ss_img == 0)) / ss_img.size
                 b = np.clip(free_ratio - 0.05*npush, 0, 1)
+                if b < 0.9:
+                    b -= 0.2
             else:
                 b = 1
         else:
