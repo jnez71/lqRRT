@@ -210,7 +210,8 @@ class LQRRT_Node(object):
         if self.move_type == 'hold':
             self.set_goal(self.state)
             self.last_update_time = self.rostime()
-            self.get_ref = lambda t: self.goal
+            remain = np.copy(self.goal)
+            self.get_ref = lambda t: remain
             self.get_eff = lambda t: np.zeros(3)
             print("\nDone!\n")
             self.move_server.set_succeeded(MoveResult(self.failure_reason))
@@ -335,12 +336,14 @@ class LQRRT_Node(object):
 
         # Immediate issue
         else:
-            self.next_runtime = self.time_till_issue/2
-            self.next_seed = self.get_ref(self.next_runtime + self.rostime() - self.last_update_time)
-            self.behavior = escape
-            self.goal_bias = 0
-            self.sample_space = escape.gen_ss(self.next_seed, self.goal)
-            self.guide = np.copy(self.goal)
+            self.last_update_time = self.rostime()
+            remain = np.copy(self.state)
+            self.get_ref = lambda t: remain
+            self.get_eff = lambda t: np.zeros(3)
+            self.next_runtime = params.basic_duration
+            self.next_seed = remain
+            self.behavior = self.select_behavior()
+            self.goal_bias, self.sample_space, self.guide = self.select_exploration()
 
         # Special first-move case
         if self.move_count == 0:
