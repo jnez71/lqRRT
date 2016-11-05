@@ -58,8 +58,8 @@ def dynamics(x, u, dt):
 
 ################################################# POLICY
 
-kp = np.diag([250, 250, 2000])
-kd = np.diag([5, 5, 0.01])
+kp = np.diag([250, 250, 2500])
+kd = np.diag([5, 5, 0.001])
 S = np.diag([1, 1, 1, 1, 1, 1])
 
 def lqr(x, u):
@@ -77,7 +77,7 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_buffer = [real_tol[0], real_tol[1], real_tol[2], np.inf, np.inf, real_tol[5]]
+goal_buffer = [real_tol[0], real_tol[1], real_tol[2], velmax_pos[0], velmax_pos[0], real_tol[5]]
 error_tol = np.copy(goal_buffer)
 
 def gen_ss(seed, goal, buff=[ss_start]*4):

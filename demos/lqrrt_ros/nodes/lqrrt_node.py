@@ -113,6 +113,7 @@ class LQRRT_Node(object):
         self.goal_bias = None
         self.sample_space = None
         self.guide = None
+        self.speed_factor = 1
 
         # Planning control
         self.last_update_time = None
@@ -120,6 +121,7 @@ class LQRRT_Node(object):
         self.next_seed = None
         self.move_count = 0
         self.initial_plan_time = params.basic_duration
+        self.blind = False
 
         # Issue control
         self.stuck = False
@@ -142,8 +144,9 @@ class LQRRT_Node(object):
         Callback for the Move action.
 
         """
-        # Main callback flag
+        # Start clean
         self.done = False
+        self.reset()
         print("="*50)
 
         # Make sure odom is publishing (well, at least once)
@@ -153,30 +156,27 @@ class LQRRT_Node(object):
             self.done = True
             return False
 
-        # Make sure we are not already in a collided state
-        if not self.is_feasible(self.state, np.zeros(3)):
-            print("Can't move. Already collided.\n")
-            self.move_server.set_aborted(MoveResult('collided'))
-            self.done = True
-            return False
-
-        # Reset the planner system for safety
-        self.reset()
-
         # Give desired pose to everyone who needs it
         self.set_goal(self.unpack_pose(msg.goal))
 
-        # Store the initial planning time if specified
-        if msg.initial_plan_time > 0:
-            self.initial_plan_time = msg.initial_plan_time
-
         # Check given move_type
         if msg.move_type in ['hold', 'drive', 'skid', 'circle']:
-            print("Preparing: {}".format(msg.move_type))
+            if msg.blind:
+                self.blind = True
+                print("Preparing: blind {}".format(msg.move_type))
+            else:
+                print("Preparing: {}".format(msg.move_type))
             self.move_type = msg.move_type
         else:
             print("Unsupported move_type: '{}'\n".format(msg.move_type))
             self.move_server.set_aborted(MoveResult('move_type'))
+            self.done = True
+            return False
+
+        # Make sure we are not already in a collided state
+        if not self.is_feasible(self.state, np.zeros(3)) and not self.blind:
+            print("Can't move. Already collided.\n")
+            self.move_server.set_aborted(MoveResult('collided'))
             self.done = True
             return False
 
@@ -193,7 +193,6 @@ class LQRRT_Node(object):
                 self.set_goal(focus_goal)
                 self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
                 print("Focused on: {}".format(boat.focus[:2]))
-
         elif self.move_type == 'circle':
             boat.focus = np.array([msg.focus.x, msg.focus.y, msg.focus.z])
             self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
@@ -201,10 +200,26 @@ class LQRRT_Node(object):
                 print("Focused on: {}, counterclockwise".format(boat.focus[:2]))
             else:
                 print("Focused on: {}, clockwise".format(boat.focus[:2]))
-
         else:
             boat.focus = None
             self.focus_pub.publish(self.pack_pointstamped([1E6, 1E6, 1E6], rospy.Time.now()))
+
+        # Store the initial planning time, if specified
+        if msg.initial_plan_time > 0:
+            print("Initial plan time: {}".format(msg.initial_plan_time))
+            self.initial_plan_time = msg.initial_plan_time
+
+        # Apply the speed factor, if specified
+        if msg.speed_factor > 0 and msg.speed_factor != 1:
+            self.speed_factor = msg.speed_factor
+            print("Speed_factor: {}".format(self.speed_factor))
+            if self.speed_factor > 1:
+                print("(WARNING: amplified speeds can be glitchy)")
+        for behavior in self.behaviors_list:
+            behavior.velmax_pos = self.speed_factor * params.velmax_pos
+            behavior.velmax_neg = self.speed_factor * params.velmax_neg
+            behavior.D_pos = params.D_pos / self.speed_factor
+            behavior.D_neg = params.D_neg / self.speed_factor
 
         # Station keeping
         if self.move_type == 'hold':
@@ -236,7 +251,7 @@ class LQRRT_Node(object):
             if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol and npl.norm(p_err) > params.free_radius:
                 dt_rot = np.clip(params.dt, 1E-6, 0.01)
                 x_seq_rot, T_rot, rot_success, u_seq_rot = self.rotation_move(self.state, h_goal, params.pointshoot_tol, dt_rot)
-                print("Rotating towards goal (duration: {})".format(np.round(T_rot, 2)))
+                print("\nRotating towards goal (duration: {})".format(np.round(T_rot, 2)))
 
                 # Things to do if rotation failed
                 if not rot_success:
@@ -366,7 +381,6 @@ class LQRRT_Node(object):
 
         # Update finished properly
         if clean_update:
-
             # We might be stuck if tree is oddly small
             if self.behavior.planner.tree.size <= params.stuck_threshold or self.behavior.planner.T == params.dt:
                 # Increase stuck count towards threshold
@@ -464,7 +478,7 @@ class LQRRT_Node(object):
             return(0, escape.gen_ss(self.next_seed, self.goal), gs)
 
         # Analyze ogrid to find good bias and sample space buffer
-        if self.ogrid is not None and self.next_seed is not None:
+        if self.ogrid is not None and not self.blind and self.next_seed is not None:
 
             # Get opencv-ready image from current ogrid (255 is occupied, 0 is clear)
             occ_img = 255*np.greater(self.ogrid, self.ogrid_threshold).astype(np.uint8)
@@ -636,8 +650,8 @@ class LQRRT_Node(object):
         that is only True if that (x, u) is feasible.
 
         """
-        # If there's no ogrid yet, anywhere is valid
-        if self.ogrid is None:
+        # If there's no ogrid yet or it's a blind move, anywhere is valid
+        if self.ogrid is None or self.blind:
             return True
 
         # Body to world
