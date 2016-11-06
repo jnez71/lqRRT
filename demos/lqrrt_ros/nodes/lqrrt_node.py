@@ -294,8 +294,14 @@ class LQRRT_Node(object):
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
                 print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
-                print("Tree size: {}".format(self.tree.size))
-                print("Move duration: {}".format(np.round(self.next_runtime, 1)))
+            else:
+                print("\nIssue Status\n----")
+                print("Stuck: {}".format(self.stuck))
+                print("Collided: {}".format(self.collided))
+                print("Unreachable: {}".format(self.unreachable))
+                print("Preempted: {}".format(self.preempted))
+            print("Tree size: {}".format(self.tree.size))
+            print("Move duration: {}".format(np.round(self.next_runtime, 1)))
 
             # Check if action goal is complete
             if np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
