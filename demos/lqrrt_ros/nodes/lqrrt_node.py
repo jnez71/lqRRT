@@ -285,7 +285,6 @@ class LQRRT_Node(object):
 
         # Begin tree-chaining loop
         while not rospy.is_shutdown():
-            print("(entering tree chain)")
             clean_update = self.tree_chain()
             self.move_count += 1
 

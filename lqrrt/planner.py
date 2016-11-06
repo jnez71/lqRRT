@@ -301,7 +301,7 @@ class Planner:
                 for i, g in enumerate(self.constraints.goal_buffer):
                     if np.isinf(g):
                         Sguide[:, i] = 0
-                guide_diffs = self.tree.state - self.xguide
+                guide_diffs = np.array(map(self.erf, self.xguide, self.tree.state))
                 closestID = np.argmin(np.sum(np.tensordot(guide_diffs, Sguide, axes=1) * guide_diffs, axis=1))
                 self.node_seq = self.tree.climb(closestID)
                 # Construct plan
@@ -333,7 +333,8 @@ class Planner:
 
         """
         S = self.lqr(x, np.zeros(self.ncontrols))[0]
-        diffs = self.tree.state - x
+        # diffs = self.tree.state - x
+        diffs = np.array(map(self.erf, x, self.tree.state))
         return np.sum(np.tensordot(diffs, S, axes=1) * diffs, axis=1)
 
 #################################################
