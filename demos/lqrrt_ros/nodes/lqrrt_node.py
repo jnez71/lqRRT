@@ -522,6 +522,9 @@ class LQRRT_Node(object):
                     break
 
                 # Find dividing boundary points
+                if np.any(np.equal(ss_img.shape, 0)):
+                    print("\nOccupancy grid analysis failed... Please report this!")
+                    return(0.5, self.behavior.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
                 bpts = self.boundary_analysis(ss_img, ss_seed, ss_goal)
 
                 # If already connected, no expansion necessary
@@ -583,8 +586,7 @@ class LQRRT_Node(object):
                     ss_img = np.copy(occ_img_dial[offset_y[0]:offset_y[1], offset_x[0]:offset_x[1]])
                     if np.any(np.equal(ss_img.shape, 0)):
                         print("\nOccupancy grid analysis failed... Please report this!")
-                        self.behavior = escape
-                        return(0.5, escape.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                        return(0.5, self.behavior.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
                     test_flood = np.copy(ss_img)
