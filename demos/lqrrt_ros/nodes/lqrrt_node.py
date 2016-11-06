@@ -175,7 +175,7 @@ class LQRRT_Node(object):
 
         # Make sure we are not already in a collided state
         if not self.is_feasible(self.state, np.zeros(3)) and not self.blind:
-            print("Can't move. Already collided.\n")
+            print("\nCan't move. Already collided.\n")
             self.move_server.set_aborted(MoveResult('collided'))
             self.done = True
             return False
@@ -876,21 +876,22 @@ class LQRRT_Node(object):
         occupied pixels have value 255 in img.
 
         """
-        # Safety and space
+        # Set-up
         img = np.copy(img)
+        fc1 = 1; fc2 = 2
         bpts = []
 
         # If goal can flood to seed then done
         flood_goal = np.copy(img)
-        area, rect = cv2.floodFill(flood_goal, np.zeros((flood_goal.shape[0]+2, flood_goal.shape[1]+2), np.uint8), goal, 96)
-        if flood_goal[seed[1], seed[0]] == 96:
+        area, rect = cv2.floodFill(flood_goal, np.zeros((flood_goal.shape[0]+2, flood_goal.shape[1]+2), np.uint8), goal, fc1)
+        if flood_goal[seed[1], seed[0]] == fc1:
             return 'connected'
         
         # Filter out the dividing boundary
-        flood_goal_thresh = 96*np.equal(flood_goal, 96).astype(np.uint8)
+        flood_goal_thresh = fc1*np.equal(flood_goal, fc1).astype(np.uint8)
         flood_seed = np.copy(flood_goal_thresh)
-        area, rect = cv2.floodFill(flood_seed, np.zeros((flood_seed.shape[0]+2, flood_seed.shape[1]+2), np.uint8), seed, 69)
-        flood_seed_thresh = 69*np.equal(flood_seed, 69).astype(np.uint8)
+        area, rect = cv2.floodFill(flood_seed, np.zeros((flood_seed.shape[0]+2, flood_seed.shape[1]+2), np.uint8), seed, fc2)
+        flood_seed_thresh = fc2*np.equal(flood_seed, fc2).astype(np.uint8)
 
         # Buffered boundaries and dimensions
         left = img[1:-1, 1]
@@ -917,7 +918,7 @@ class LQRRT_Node(object):
         # Iterate through candidates and store the dividing boundary points
         for (row, col) in cands:
             hood = self.get_hood(flood_seed_thresh, row, col)
-            if np.any(hood == 69) and np.any(hood == 0):
+            if np.any(hood == fc2) and np.any(hood == 0):
                 bpts.append([row, col])
 
         # If they are not connected but there are no boundary points,
