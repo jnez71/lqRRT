@@ -289,7 +289,7 @@ class LQRRT_Node(object):
             self.move_count += 1
 
             # Print feedback
-            if clean_update and self.failure_reason == '' and not self.stuck:
+            if clean_update and not (self.preempted or self.unreachable or self.collided or self.stuck):
                 print("\nMove {}\n----".format(self.move_count))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
@@ -682,12 +682,14 @@ class LQRRT_Node(object):
 
         """
         # Make sure a plan exists and that we aren't currently fixing it
-        if self.last_update_time is None or self.x_seq is None \
+        last_update_time = self.last_update_time
+        x_seq = np.copy(self.x_seq)
+        if last_update_time is None or not np.any(x_seq) \
            or self.done or self.time_till_issue is not None:
             return
 
         # Timesteps since last update
-        iters_passed = int((self.rostime() - self.last_update_time) / params.dt)
+        iters_passed = int((self.rostime() - last_update_time) / params.dt)
 
         # Make sure that the goal pose is still feasible
         if not self.is_feasible(self.goal, np.zeros(3)):
@@ -718,7 +720,7 @@ class LQRRT_Node(object):
             return
 
         # Check that all points in the current plan are still feasible
-        p_seq = np.copy(self.x_seq[iters_passed:])
+        p_seq = np.copy(x_seq[iters_passed:])
         if len(p_seq):
             p_seq[:, 3:] = 0
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
@@ -743,7 +745,7 @@ class LQRRT_Node(object):
 
         # If we are escaping, check if we have a clear path again
         if self.enroute_behavior is escape:
-            start = self.get_ref(self.rostime() - self.last_update_time)
+            start = self.get_ref(self.rostime() - last_update_time)
             p_err = self.goal[:2] - start[:2]
             if npl.norm(p_err) > params.free_radius:
                 npoints = npl.norm(p_err) / params.vps_spacing
@@ -787,13 +789,15 @@ class LQRRT_Node(object):
                     rospy.sleep(0.1)
             return
 
+        next_runtime = self.next_runtime
+        last_update_time = self.last_update_time
         if self.enroute_behavior is not None and self.tree is not None and self.tracking is not None and \
-           self.next_runtime is not None and self.last_update_time is not None:
-            time_till_next_branch = self.next_runtime - (self.rostime() - self.last_update_time)
+           next_runtime is not None and last_update_time is not None:
+            time_till_next_branch = next_runtime - (self.rostime() - last_update_time)
             self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
                                                            self.tree.size,
                                                            self.tracking,
-                                                           self.erf(self.goal, self.get_ref(self.rostime() - self.last_update_time))[:3],
+                                                           self.erf(self.goal, self.get_ref(self.rostime() - last_update_time))[:3],
                                                            time_till_next_branch))
 
 ################################################# LIL MATH DOERS
@@ -949,11 +953,12 @@ class LQRRT_Node(object):
 
         """
         # Make sure a plan exists
-        if self.get_ref is None or self.last_update_time is None:
+        last_update_time = self.last_update_time
+        if self.get_ref is None or last_update_time is None:
             return
 
         # Time since last update
-        T = self.rostime() - self.last_update_time
+        T = self.rostime() - last_update_time
         stamp = rospy.Time.now()
 
         # Publish interpolated reference
@@ -1052,8 +1057,9 @@ class LQRRT_Node(object):
         self.world_frame_id = msg.header.frame_id
         self.body_frame_id = msg.child_frame_id
         self.state = self.unpack_odom(msg)
-        if self.get_ref is not None and self.last_update_time is not None:
-            if np.all(np.abs(self.erf(self.get_ref(self.rostime() - self.last_update_time), self.state)) < 2*np.array(params.real_tol)):
+        last_update_time = self.last_update_time
+        if self.get_ref is not None and last_update_time is not None:
+            if np.all(np.abs(self.erf(self.get_ref(self.rostime() - last_update_time), self.state)) < 2*np.array(params.real_tol)):
                 self.tracking = True
             else:
                 self.tracking = False
