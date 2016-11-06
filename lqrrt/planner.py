@@ -102,7 +102,7 @@ class Planner:
 #################################################
 
     def update_plan(self, x0, sample_space, goal_bias=0,
-                    guide=None, xrand_gen=None,
+                    guide=None, xrand_gen=None, pruning=True,
                     finish_on_goal=False, specific_time=None):
         """
         A new tree is grown from the seed x0 in an attempt to plan
@@ -130,6 +130,9 @@ class Planner:
         until the node limit is breached. After the limit, a warning is
         printed and the path that gets nearest to the guide is
         used instead. If guide is left None, it defaults to goal.
+
+        If pruning is True, then nodes can be marked as "ignore" during
+        growth. Right now, only nodes on a completed path are ignored.
 
         If finish_on_goal is set to True, once the plan makes it to the goal
         region (goal plus buffer), it will attempt to steer one more path
@@ -220,12 +223,15 @@ class Planner:
             xrand = xrand_gen(self)
 
             # The "nearest" node to xrand has the least cost-to-go of all nodes
-            nearestIDs = np.argsort(self._costs_to_go(xrand))
-            nearestID = nearestIDs[0]
-            for ID in nearestIDs:
-                if ID not in ignores:
-                    nearestID = ID
-                    break
+            if pruning:
+                nearestIDs = np.argsort(self._costs_to_go(xrand))
+                nearestID = nearestIDs[0]
+                for ID in nearestIDs:
+                    if ID not in ignores:
+                        nearestID = ID
+                        break
+            else:
+                nearestID = np.argmin(self._costs_to_go(xrand))
 
             # Candidate extension to the tree
             xnew_seq, unew_seq = self._steer(nearestID, xrand, force_arrive=False)
