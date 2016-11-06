@@ -285,23 +285,26 @@ class LQRRT_Node(object):
 
         # Begin tree-chaining loop
         while not rospy.is_shutdown():
+            print("(entering tree chain)")
             clean_update = self.tree_chain()
             self.move_count += 1
 
             # Print feedback
-            if clean_update and not (self.preempted or self.unreachable or self.collided or self.stuck):
+            if clean_update and not (self.preempted or self.unreachable or self.stuck):
                 print("\nMove {}\n----".format(self.move_count))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
                 print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
-            else:
-                print("\nIssue Status\n----")
-                print("Stuck: {}".format(self.stuck))
-                print("Collided: {}".format(self.collided))
-                print("Unreachable: {}".format(self.unreachable))
-                print("Preempted: {}".format(self.preempted))
-            print("Tree size: {}".format(self.tree.size))
-            print("Move duration: {}".format(np.round(self.next_runtime, 1)))
+                print("Tree size: {}".format(self.tree.size))
+                print("Move duration: {}".format(np.round(self.next_runtime, 1)))
+            # else:
+            #     print("\nIssue Status\n----")
+            #     print("Stuck: {}".format(self.stuck))
+            #     print("Collided: {}".format(self.collided))
+            #     print("Unreachable: {}".format(self.unreachable))
+            #     print("Preempted: {}".format(self.preempted))
+            #     print("Tree size: {}".format(self.tree.size))
+            #     print("Move duration: {}".format(np.round(self.next_runtime, 1)))
 
             # Check if action goal is complete
             if np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
@@ -313,8 +316,8 @@ class LQRRT_Node(object):
                 self.done = True
                 return True
 
-            # Check for abrupt termination, collision, or unreachability
-            if self.preempted or self.collided or self.unreachable:
+            # Check for abrupt termination or unreachability
+            if self.preempted or self.unreachable:
                 remain = np.copy(np.concatenate((self.state[:3], np.zeros(3))))
                 self.get_ref = lambda t: remain
                 self.get_eff = lambda t: np.zeros(3)
@@ -332,7 +335,7 @@ class LQRRT_Node(object):
 
         """
         # Make sure we are not currently in an update or a collided state
-        if self.growing_tree or self.collided:
+        if self.growing_tree:
             return False
 
         # Thread locking, lol
@@ -346,14 +349,14 @@ class LQRRT_Node(object):
             elif self.stuck:
                 self.next_runtime = None
             self.behavior = self.select_behavior()
-            self.goal_bias, self.sample_space, self.guide = self.select_exploration()
+            self.goal_bias, self.sample_space, self.guide, self.pruning = self.select_exploration()
 
         # Distant issue
         elif self.time_till_issue > 2*params.basic_duration:
             self.next_runtime = params.basic_duration
             self.next_seed = self.get_ref(self.next_runtime + self.rostime() - self.last_update_time)
             self.behavior = self.select_behavior()
-            self.goal_bias, self.sample_space, self.guide = self.select_exploration()
+            self.goal_bias, self.sample_space, self.guide, self.pruning = self.select_exploration()
 
         # Immediate issue
         else:
@@ -364,7 +367,7 @@ class LQRRT_Node(object):
             self.next_runtime = params.basic_duration
             self.next_seed = remain
             self.behavior = self.select_behavior()
-            self.goal_bias, self.sample_space, self.guide = self.select_exploration()
+            self.goal_bias, self.sample_space, self.guide, self.pruning = self.select_exploration()
 
         # Special first-move case
         if self.move_count == 0:
@@ -383,6 +386,7 @@ class LQRRT_Node(object):
                                                          sample_space=self.sample_space,
                                                          goal_bias=self.goal_bias,
                                                          guide=self.guide,
+                                                         pruning=self.pruning,
                                                          specific_time=self.next_runtime)
 
         # Update finished properly
@@ -468,7 +472,8 @@ class LQRRT_Node(object):
 
     def select_exploration(self):
         """
-        Chooses the goal bias, sample space, and guide point for the current move and behavior.
+        Chooses the goal bias, sample space, guide point, and pruning
+        choice for the current move and behavior.
 
         """
         # Escaping means maximal exploration
@@ -481,7 +486,7 @@ class LQRRT_Node(object):
                     gs[:2] = vec + 2*params.free_radius*(vec/dist)
             else:
                 gs = np.copy(self.guide)
-            return(0, escape.gen_ss(self.next_seed, self.goal), gs)
+            return(0, escape.gen_ss(self.next_seed, self.goal), gs, True)
 
         # Analyze ogrid to find good bias and sample space buffer
         if self.ogrid is not None and not self.blind and self.next_seed is not None:
@@ -510,7 +515,7 @@ class LQRRT_Node(object):
                 occ_img_dial[goal[1], goal[0]]
             except IndexError:
                 print("Goal and/or seed out of bounds of occupancy grid!")
-                return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal))
+                return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal), False)
 
             # Initializations
             found_entry = False
@@ -530,7 +535,7 @@ class LQRRT_Node(object):
                 # Find dividing boundary points
                 if np.any(np.equal(ss_img.shape, 0)):
                     print("\nOccupancy grid analysis failed... Please report this!")
-                    return(0.5, self.behavior.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                    return(0.5, self.behavior.gen_ss(self.next_seed, self.goal), np.copy(self.goal), False)
                 bpts = self.boundary_analysis(ss_img, ss_seed, ss_goal)
 
                 # If already connected, no expansion necessary
@@ -592,7 +597,7 @@ class LQRRT_Node(object):
                     ss_img = np.copy(occ_img_dial[offset_y[0]:offset_y[1], offset_x[0]:offset_x[1]])
                     if np.any(np.equal(ss_img.shape, 0)):
                         print("\nOccupancy grid analysis failed... Please report this!")
-                        return(0.5, self.behavior.gen_ss(self.next_seed, self.goal), np.copy(self.goal))
+                        return(0.5, self.behavior.gen_ss(self.next_seed, self.goal), np.copy(self.goal), False)
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
                     test_flood = np.copy(ss_img)
@@ -612,7 +617,7 @@ class LQRRT_Node(object):
                 self.failure_reason = 'unreachable'
                 for behavior in self.behaviors_list:
                     behavior.planner.kill_update()
-                return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal))
+                return(0, escape.gen_ss(self.next_seed, self.goal, 1), np.copy(self.goal), False)
 
             # Apply push in real coordinates
             push = np.array(push, dtype=np.float64) / self.ogrid_cpm
@@ -636,16 +641,16 @@ class LQRRT_Node(object):
         # For boating
         if self.behavior is boat:
             if npl.norm(self.goal[:2] - self.next_seed[:2]) < params.free_radius:
-                return([1, 1, 1, 0, 0, 0], ss, gs)
+                return([1, 1, 1, 0, 0, 0], ss, gs, False)
             else:
                 if boat.focus is None:
-                    return([b, b, 1, 0, 0, 1], ss, gs)
+                    return([b, b, 1, 0, 0, 1], ss, gs, True)
                 else:
-                    return([b, b, 0, 0, 0, 0], ss, gs)
+                    return([b, b, 0, 0, 0, 0], ss, gs, True)
 
         # For car-ing
         if self.behavior is car:
-            return([b, b, 0, 0, 0.5, 0], ss, gs)
+            return([b, b, 0, 0, 0.5, 0], ss, gs, True)
 
         # (debug)
         raise ValueError("Indeterminant behavior configuration.")
@@ -734,16 +739,17 @@ class LQRRT_Node(object):
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
                 if not self.is_feasible(x, u):
                     time_till_collision = i*params.dt
-                    if time_till_collision < params.collision_threshold:
+                    if time_till_collision <= params.collision_threshold:
                         if not self.collided:
                             print("\nCollided! (*seppuku*)")
+                            print("But we cannot throw away our shot!")
                             self.collided = True
                             self.failure_reason = 'collided'
                     else:
                         print("\nFound collision on current path!\nTime till collision: {}".format(time_till_collision))
                         self.time_till_issue = time_till_collision
-                    for behavior in self.behaviors_list:
-                        behavior.planner.kill_update()
+                        for behavior in self.behaviors_list:
+                            behavior.planner.kill_update()
                     return
         if self.collided:
             print("\nNo longer collided! (*unseppuku*)")

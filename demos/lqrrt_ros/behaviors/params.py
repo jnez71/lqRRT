@@ -22,7 +22,7 @@ fudge_factor = 0.85
 
 stuck_threshold = 2  # moves
 fail_threshold = 5  # stucks
-collision_threshold = 0.3  # s
+collision_threshold = 0.5  # s
 
 ################################################# TREE GROWTH
 

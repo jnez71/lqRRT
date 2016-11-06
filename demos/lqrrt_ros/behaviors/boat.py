@@ -77,7 +77,7 @@ def lqr(x, u):
 
 ################################################# HEURISTICS
 
-goal_buffer = [real_tol[0], real_tol[1], real_tol[2], np.inf, np.inf, real_tol[5]]
+goal_buffer = [real_tol[0], real_tol[1], real_tol[2], np.inf, np.inf, np.inf]
 error_tol = np.copy(goal_buffer)
 
 def gen_ss(seed, goal, buff=[ss_start]*4):
