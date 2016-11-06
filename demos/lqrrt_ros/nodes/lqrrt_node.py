@@ -382,7 +382,7 @@ class LQRRT_Node(object):
         # Update finished properly
         if clean_update:
             # We might be stuck if tree is oddly small
-            if self.behavior.planner.tree.size <= params.stuck_threshold or self.behavior.planner.T == params.dt:
+            if self.behavior.planner.tree.size == 1:
                 # Increase stuck count towards threshold
                 self.stuck_count += 1
                 if self.stuck_count > params.stuck_threshold:
