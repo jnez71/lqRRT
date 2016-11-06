@@ -162,6 +162,7 @@ class Planner:
 
         # Reset the tree
         self.tree = Tree(x0, self.lqr(x0, np.zeros(self.ncontrols)))
+        ignores = np.array([])
 
         # If not given an xrand_gen function, make the standard one
         if xrand_gen is None:
@@ -219,7 +220,12 @@ class Planner:
             xrand = xrand_gen(self)
 
             # The "nearest" node to xrand has the least cost-to-go of all nodes
-            nearestID = np.argmin(self._costs_to_go(xrand))
+            nearestIDs = np.argsort(self._costs_to_go(xrand))
+            nearestID = nearestIDs[0]
+            for ID in nearestIDs:
+                if ID not in ignores:
+                    nearestID = ID
+                    break
 
             # Candidate extension to the tree
             xnew_seq, unew_seq = self._steer(nearestID, xrand, force_arrive=False)
@@ -240,6 +246,9 @@ class Planner:
                     # Climb tree to construct sequence of states for this path
                     node_seq = self.tree.climb(self.tree.size-1)
                     x_seq, u_seq = self.tree.trajectory(node_seq)
+
+                    # Ignore nodes on any succeeded path
+                    ignores = np.unique(np.concatenate((ignores, node_seq)))
 
                     # Expected time to complete this plan
                     T = len(x_seq) * self.dt
