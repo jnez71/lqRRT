@@ -44,8 +44,8 @@ class Planner:
     constraints: Instance of the Constraints class that defines
                  feasibility of states & efforts, goal region, etc...
 
-    horizon: The simulation duration in seconds used to extend the tree.
-             If you set this to 0, a pseudo-reachability-guided heuristic is used.
+    horizon: The simulation duration in seconds used to extend the tree. If you
+             give a tuple (min, max), an adaptive horizon heuristic will be used.
 
     dt: The simulation timestep in seconds used to extend the tree.
 
@@ -386,14 +386,14 @@ class Planner:
                 i += 1
                 emag = np.abs(e)
 
-                # "Reachability" heuristic
-                if self.rfactor:
+                # Adaptive horizon heuristic
+                if self.hfactor:
                     if np.all(emag >= last_emag):
                         x_seq = []; u_seq = []
-                        self.horizon_iters = int(np.clip(self.horizon_iters/self.rfactor, 1, 1/self.dt))
+                        self.horizon_iters = int(np.clip(self.horizon_iters/self.hfactor, self.hspan[0], self.hspan[1]))
                         break
                     if i == self.horizon_iters:
-                        self.horizon_iters = int(np.clip(self.rfactor*self.horizon_iters, 1, 1/self.dt))
+                        self.horizon_iters = int(np.clip(self.hfactor*self.horizon_iters, self.hspan[0], self.hspan[1]))
                     last_emag = emag
 
                 # Horizon, or tolerable convergence criteria
@@ -507,12 +507,20 @@ class Planner:
             else:
                 raise ValueError("Shape of error_tol must be scalar or length of state.")
 
-        if self.horizon >= self.dt:
-            self.horizon_iters = int(self.horizon / self.dt)
-            self.rfactor = 0
-        elif self.horizon == 0:
+        if hasattr(self.horizon, '__contains__'):
+            if len(self.horizon) != 2:
+                raise ValueError("Expected horizon to be tuple (min, max) or a single scalar.")
+            if self.horizon[0] < self.dt:
+                raise ValueError("The minimum horizon must be at least as big as dt.")
+            if self.horizon[0] >= self.horizon[1]:
+                raise ValueError("A horizon range tuple must be given as (min, max) where min < max.")
             self.horizon_iters = 1
-            self.rfactor = int(2)
+            self.hspan = np.divide(self.horizon, self.dt).astype(np.int64)
+            self.hfactor = int(2)
+        elif self.horizon >= self.dt:
+            self.horizon_iters = int(self.horizon / self.dt)
+            self.hspan = (self.horizon_iters, self.horizon_iters)
+            self.hfactor = 0
         else:
             raise ValueError("The horizon must be at least as big as dt.")
 

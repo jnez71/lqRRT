@@ -26,7 +26,7 @@ collision_threshold = 0.3  # s
 
 ################################################# TREE GROWTH
 
-horizon = 0  # s, 0 == adaptive
+horizon = (1, 3)  # s
 dt = 0.1  # s
 FPR = 0
 ss_start = 10  # m
