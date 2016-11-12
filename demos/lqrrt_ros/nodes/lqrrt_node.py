@@ -709,15 +709,27 @@ class LQRRT_Node(object):
             self.time_till_issue = np.inf
             self.failure_reason = 'occupied'
             p_err = self.goal[:2] - self.state[:2]
-            npoints = npl.norm(p_err) / (params.boat_length/2)
+            p_err_mag = npl.norm(p_err)
+            if p_err_mag <= npl.norm(params.real_tol[:2]):
+                print("...looks like I am already nearby.")
+                self.set_goal(self.state)
+                return
+            npoints = p_err_mag / (params.boat_length/2)
             xline = np.linspace(self.goal[0], self.state[0], npoints)
             yline = np.linspace(self.goal[1], self.state[1], npoints)
             hline = [np.arctan2(p_err[1], p_err[0])] * npoints
             sline = np.vstack((xline, yline, hline, np.zeros((3, npoints)))).T
+            found_free_goal = False
             for i, x in enumerate(sline[:-1]):
                 if self.is_feasible(x, np.zeros(3)):
                     self.set_goal(sline[i+1])
+                    found_free_goal = True
                     break
+            if not found_free_goal:
+                print("\nCould not find a reasonable free goal!")
+                self.unreachable = True
+                self.failure_reason = 'unreachable'
+                return
             if boat.focus is not None and self.move_type == 'skid':
                 focus_vec = boat.focus[:2] - self.goal[:2]
                 focus_goal = np.copy(self.goal)
