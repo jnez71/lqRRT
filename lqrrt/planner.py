@@ -120,7 +120,12 @@ class Planner:
         Alternatively, you can give a function xrand_gen which takes the
         current planner instance (self) and outputs the random sample state.
         Doing this will override both sample_space and goal_bias, which you
-        can set to arbitrary values only if you provide an xrand_gen.
+        can set to arbitrary values only if you provide an xrand_gen function.
+
+        Or, instead of a function, you can set xrand_gen to a single integer
+        1 or greater, which will act as the number of tries allowed for
+        finding a feasible random sample in the default random sampling
+        routine. (Leaving the default None will set the limit to 10 tries).
 
         After min_time seconds, the fastest available path from x0 to
         the current goal is returned and the functions get_state(t)
@@ -168,7 +173,7 @@ class Planner:
         ignores = np.array([])
 
         # If not given an xrand_gen function, make the standard one
-        if xrand_gen is None:
+        if xrand_gen is None or type(xrand_gen) is int:
 
             # Properly cast the given goal bias
             if goal_bias is None:
@@ -179,6 +184,12 @@ class Planner:
             else:
                 goal_bias = [goal_bias] * self.nstates
 
+            # Set the number of tries for sample feasibility
+            if xrand_gen > 0:
+                tries_limit = xrand_gen
+            else:
+                tries_limit = 10
+
             # Properly cast the given sample space and extract statistics
             sample_space = np.array(sample_space, dtype=np.float64)
             if sample_space.shape != (self.nstates, 2):
@@ -188,19 +199,21 @@ class Planner:
 
             # Standard sampling
             def xrand_gen(planner):
-                while time_elapsed < max_time:
+                tries = 0
+                while tries < tries_limit:
                     xrand = sampling_centers + sampling_spans*(np.random.sample(self.nstates)-0.5)
                     for i, choice in enumerate(np.greater(goal_bias, np.random.sample())):
                         if choice:
                             xrand[i] = self.goal[i]
                     if self.constraints.is_feasible(xrand, np.zeros(self.ncontrols)):
                         return xrand
-                return self.goal
+                    tries += 1
+                return xrand
 
         # Otherwise, use given sampling function
         else:
             if not hasattr(xrand_gen, '__call__'):
-                raise ValueError("Expected xrand_gen to be None or a function.")
+                raise ValueError("Expected xrand_gen to be None, an integer >= 1,  or a function.")
 
         # Store guide state
         if guide is None:
