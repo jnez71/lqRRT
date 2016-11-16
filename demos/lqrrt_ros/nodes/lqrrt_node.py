@@ -736,7 +736,7 @@ class LQRRT_Node(object):
         iters_passed = int((self.rostime() - last_update_time) / self.dt)
 
         # Make sure that the goal pose is still feasible
-        if not self.is_feasible(self.goal, np.zeros(3)):
+        if not self.is_feasible(self.goal, np.zeros(3)) and self.move_type != 'spiral':
             print("\nThe given goal is occupied!\nGoing nearby instead.")
             self.time_till_issue = np.inf
             self.failure_reason = 'occupied'
@@ -775,8 +775,8 @@ class LQRRT_Node(object):
                 behavior.planner.kill_update()
             return
 
-        # Check that all points in the current plan are still feasible
-        p_seq = np.copy(x_seq[iters_passed:])
+        # Check that the next reeval_limit seconds in the current plan are still feasible
+        p_seq = np.copy(x_seq[iters_passed:min([len(x_seq), int(iters_passed+(params.reeval_limit/self.dt))])])
         if len(p_seq):
             p_seq[:, 3:] = 0
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
@@ -1152,10 +1152,13 @@ class LQRRT_Node(object):
         Reevaluates the current plan since the ogrid changed.
 
         """
+        start = self.rostime()
         self.ogrid = np.array(msg.data).reshape((msg.info.height, msg.info.width))
         self.ogrid_origin = np.array([msg.info.origin.position.x, msg.info.origin.position.y])
         self.ogrid_cpm = 1 / msg.info.resolution
         self.reevaluate_plan()
+        if abs(self.rostime() - start) > 1:
+            print("\n(WARNING: ogrid callback is taking longer than 1 second)\n")
 
 
     def odom_cb(self, msg):
