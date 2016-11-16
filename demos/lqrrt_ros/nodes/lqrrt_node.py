@@ -50,7 +50,6 @@ class LQRRT_Node(object):
         self.ogrid_threshold = float(ogrid_threshold)
         self.state = None
         self.tracking = None
-        self.growing_tree = False
         self.done = True
 
         # Lil helpers
@@ -105,6 +104,7 @@ class LQRRT_Node(object):
         self.x_seq = None
         self.u_seq = None
         self.tree = None
+        self.dt = params.dt
 
         # Behavior control
         self.move_type = None
@@ -134,6 +134,7 @@ class LQRRT_Node(object):
         self.collided = False
 
         # Unkill all planners
+        self.lock_tree = False
         for behavior in self.behaviors_list:
             behavior.planner.unkill()
 
@@ -160,7 +161,7 @@ class LQRRT_Node(object):
         self.set_goal(self.unpack_pose(msg.goal))
 
         # Check given move_type
-        if msg.move_type in ['hold', 'drive', 'skid', 'circle']:
+        if msg.move_type in ['hold', 'drive', 'skid', 'spiral']:
             if msg.blind:
                 self.blind = True
                 print("Preparing: blind {}".format(msg.move_type))
@@ -193,11 +194,13 @@ class LQRRT_Node(object):
                 self.set_goal(focus_goal)
                 self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
                 print("Focused on: {}".format(boat.focus[:2]))
-        elif self.move_type == 'circle':
+        elif self.move_type == 'spiral':
             boat.focus = np.array([msg.focus.x, msg.focus.y, msg.focus.z])
             self.focus_pub.publish(self.pack_pointstamped(boat.focus, rospy.Time.now()))
             if boat.focus[2] >= 0:
                 print("Focused on: {}, counterclockwise".format(boat.focus[:2]))
+                if boat.focus[2] == 0:
+                    boat.focus[2] = 1
             else:
                 print("Focused on: {}, clockwise".format(boat.focus[:2]))
         else:
@@ -233,12 +236,34 @@ class LQRRT_Node(object):
             self.done = True
             return True
 
-        # Circling
-        elif self.move_type == 'circle':
-            print("Circle moves are not implemented yet!\n")
-            self.move_server.set_aborted(MoveResult('patience'))
-            self.done = True
-            return False
+        # Spiraling
+        elif self.move_type == 'spiral':
+            if np.isclose(npl.norm(boat.focus[:2] - self.state[:2]), 0):
+                print("\nCan't perform a spiral of zero initial radius! Sorry.")
+                print("\nTerminated.\n")
+                self.move_server.set_aborted(MoveResult('degen'))
+                self.done = True
+                return False
+            spr_results = self.spiral_move(c=boat.focus[:2],
+                                           x=self.state,
+                                           N=abs(boat.focus[2]),
+                                           direc=np.sign(boat.focus[2]),
+                                           mpr=msg.goal.position.z/(2*np.pi))
+            x_seq_spr, T_spr, spr_success = spr_results
+            if len(x_seq_spr) and spr_success:
+                self.x_seq = x_seq_spr
+                self.set_goal(x_seq_spr[-1][:])
+                self.get_ref = interp1d(np.arange(len(x_seq_spr))*self.dt, np.array(x_seq_spr), axis=0,
+                                        assume_sorted=True, bounds_error=False, fill_value=x_seq_spr[-1][:])
+                self.last_update_time = self.rostime()
+                self.next_runtime = T_spr
+                self.lock_tree = True
+            else:
+                print("\nDesired spiral path is blocked!")
+                print("\nTerminated.\n")
+                self.move_server.set_aborted(MoveResult('blocked'))
+                self.done = True
+                return False
 
         # Standard driving
         elif self.move_type == 'drive':
@@ -249,20 +274,17 @@ class LQRRT_Node(object):
 
             # If we aren't within a cone of that heading and the goal is far away, construct rotation
             if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol and npl.norm(p_err) > params.free_radius:
-                dt_rot = np.clip(params.dt, 1E-6, 0.01)
-                x_seq_rot, T_rot, rot_success, u_seq_rot = self.rotation_move(self.state, h_goal, params.pointshoot_tol, dt_rot)
+                x_seq_rot, T_rot, rot_success, u_seq_rot = self.rotation_move(self.state, h_goal, params.pointshoot_tol)
                 print("\nRotating towards goal (duration: {})".format(np.round(T_rot, 2)))
-
-                # Things to do if rotation failed
                 if not rot_success:
-                    print("\nCannot rotate completely!")
+                    print("\n(cannot rotate completely!)")
 
                 # Begin interpolating rotation move
                 self.last_update_time = self.rostime()
                 if len(x_seq_rot):
-                    self.get_ref = interp1d(np.arange(len(x_seq_rot))*dt_rot, np.array(x_seq_rot), axis=0,
+                    self.get_ref = interp1d(np.arange(len(x_seq_rot))*self.dt, np.array(x_seq_rot), axis=0,
                                             assume_sorted=True, bounds_error=False, fill_value=x_seq_rot[-1][:])
-                    self.get_eff = interp1d(np.arange(len(u_seq_rot))*dt_rot, np.array(u_seq_rot), axis=0,
+                    self.get_eff = interp1d(np.arange(len(u_seq_rot))*self.dt, np.array(u_seq_rot), axis=0,
                                             assume_sorted=True, bounds_error=False, fill_value=u_seq_rot[-1][:])
                     self.next_runtime = np.clip(T_rot, params.basic_duration, 2*np.pi/params.velmax_pos[2])
                     self.next_seed = np.copy(x_seq_rot[-1])
@@ -280,8 +302,9 @@ class LQRRT_Node(object):
             self.next_seed = np.copy(self.state)
 
         # (debug)
-        assert self.next_seed is not None
-        assert self.next_runtime is not None
+        if not self.lock_tree:
+            assert self.next_seed is not None
+            assert self.next_runtime is not None
 
         # Begin tree-chaining loop
         while not rospy.is_shutdown():
@@ -289,14 +312,14 @@ class LQRRT_Node(object):
             self.move_count += 1
 
             # Print feedback
-            if clean_update and not (self.preempted or self.unreachable or self.stuck):
+            if clean_update and not (self.preempted or self.unreachable or self.stuck or self.lock_tree):
                 print("\nMove {}\n----".format(self.move_count))
                 print("Behavior: {}".format(self.enroute_behavior.__name__[10:]))
                 print("Reached goal region: {}".format(self.enroute_behavior.planner.plan_reached_goal))
                 print("Goal bias: {}".format(np.round(self.goal_bias, 2)))
                 print("Tree size: {}".format(self.tree.size))
                 print("Move duration: {}".format(np.round(self.next_runtime, 1)))
-            # else:
+            # elif not self.lock_tree:
             #     print("\nIssue Status\n----")
             #     print("Stuck: {}".format(self.stuck))
             #     print("Collided: {}".format(self.collided))
@@ -306,13 +329,21 @@ class LQRRT_Node(object):
             #     print("Move duration: {}".format(np.round(self.next_runtime, 1)))
 
             # Check if action goal is complete
-            if np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
+            if self.move_type == 'spiral':
+                self.publish_path()
+                if self.time_till_issue is not None:
+                    self.unreachable = True
+                    self.failure_reason = 'blocked'
+                if (self.rostime() - self.last_update_time) >= T_spr:
+                    self.done = True
+            elif np.all(np.abs(self.erf(self.goal, self.state)) <= params.real_tol):
                 remain = np.copy(self.goal)
                 self.get_ref = lambda t: remain
                 self.get_eff = lambda t: np.zeros(3)
+                self.done = True
+            if self.done:
                 print("\nDone!\n")
                 self.move_server.set_succeeded(MoveResult(self.failure_reason))
-                self.done = True
                 return True
 
             # Check for abrupt termination or unreachability
@@ -334,11 +365,12 @@ class LQRRT_Node(object):
 
         """
         # Make sure we are not currently in an update or a collided state
-        if self.growing_tree:
+        if self.lock_tree:
+            rospy.sleep(0.01)
             return False
 
         # Thread locking, lol
-        self.growing_tree = True
+        self.lock_tree = True
 
         # No issue
         if self.time_till_issue is None:
@@ -435,7 +467,7 @@ class LQRRT_Node(object):
             behavior.planner.unkill()
 
         # Unlocking, lol
-        self.growing_tree = False
+        self.lock_tree = False
 
         return clean_update
 
@@ -701,7 +733,7 @@ class LQRRT_Node(object):
             return
 
         # Timesteps since last update
-        iters_passed = int((self.rostime() - last_update_time) / params.dt)
+        iters_passed = int((self.rostime() - last_update_time) / self.dt)
 
         # Make sure that the goal pose is still feasible
         if not self.is_feasible(self.goal, np.zeros(3)):
@@ -749,7 +781,7 @@ class LQRRT_Node(object):
             p_seq[:, 3:] = 0
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
                 if not self.is_feasible(x, u):
-                    time_till_collision = i*params.dt
+                    time_till_collision = i*self.dt
                     if time_till_collision <= params.collision_threshold:
                         if not self.collided:
                             print("\nCollided! (*seppuku*)")
@@ -803,7 +835,7 @@ class LQRRT_Node(object):
         if self.preempted or not self.move_server.is_active():
             return
 
-        if self.move_server.is_preempt_requested() or (rospy.is_shutdown() and self.growing_tree):
+        if self.move_server.is_preempt_requested() or (rospy.is_shutdown() and self.lock_tree):
             self.preempted = True
             self.failure_reason = 'preempted'
             print("\nAction preempted!")
@@ -816,23 +848,29 @@ class LQRRT_Node(object):
 
         next_runtime = self.next_runtime
         last_update_time = self.last_update_time
-        if self.enroute_behavior is not None and self.tree is not None and self.tracking is not None and \
-           next_runtime is not None and last_update_time is not None:
+        if next_runtime is not None and last_update_time is not None:
             time_till_next_branch = next_runtime - (self.rostime() - last_update_time)
-            self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
-                                                           self.tree.size,
-                                                           self.tracking,
-                                                           self.erf(self.goal, self.get_ref(self.rostime() - last_update_time))[:3],
-                                                           time_till_next_branch))
+            if self.move_type == 'spiral':
+                self.move_server.publish_feedback(MoveFeedback('boat',
+                                                               0,
+                                                               self.tracking,
+                                                               self.erf(self.goal, self.get_ref(self.rostime() - last_update_time))[:3],
+                                                               time_till_next_branch))
+            elif self.enroute_behavior is not None and self.tree is not None and self.tracking is not None:
+                self.move_server.publish_feedback(MoveFeedback(self.enroute_behavior.__name__[10:],
+                                                               self.tree.size,
+                                                               self.tracking,
+                                                               self.erf(self.goal, self.get_ref(self.rostime() - last_update_time))[:3],
+                                                               time_till_next_branch))
 
 ################################################# LIL MATH DOERS
 
-    def rotation_move(self, x, h, tol, dt=0.01):
+    def rotation_move(self, x, h, tol):
         """
         Returns a state sequence, total time, success bool and effort
         sequence for a simple rotate in place move. Success is False if
         the move becomes infeasible before the state heading x[2] is within
-        the goal heading h+-tol. Simulation timestep is dt.
+        the goal heading h+-tol. Give x (start state), and h (goal heading).
 
         """
         # Set-up
@@ -848,7 +886,7 @@ class LQRRT_Node(object):
             # Stop if pose is infeasible
             if not self.is_feasible(np.concatenate((x[:3], np.zeros(3))), np.zeros(3)) and len(x_seq):
                 portion = params.FPR*len(x_seq)
-                return (x_seq[:int(portion)], T-portion*dt, False, u_seq[:int(portion)])
+                return (x_seq[:int(portion)], T-portion*self.dt, False, u_seq[:int(portion)])
             else:
                 x_seq.append(x)
                 u_seq.append(u)
@@ -860,17 +898,66 @@ class LQRRT_Node(object):
 
             # Step
             u = 3*boat.lqr(x, u)[1].dot(e)
-            x = boat.dynamics(x, u, dt)
-            T += dt
+            x = boat.dynamics(x, u, self.dt)
+            T += self.dt
             i += 1
 
 
-    def circle_move(self):
+    def spiral_move(self, x, c, N, direc, mpr):
         """
+        Returns a state sequence, total time, and success bool for a spiral
+        move. Success is False if the move becomes infeasible at any point.
+        Give x (initial state), c (center), N (number of revolutions), direc
+        (+- z axis), and mpr (meters expansion per radian).
 
         """
-        pass
-        #<<<
+        # Set-up
+        if direc < 0:
+            mpr *= -1
+        x = np.array(x, dtype=np.float64)
+        c = np.array(c, dtype=np.float64)
+        t = 0; a = 0
+        x_seq = []
+
+        # Radial vector
+        r = x[:2] - c
+        rmag = npl.norm(r)
+        rdir = r / np.clip(rmag, 1E-6, rmag)
+
+        # Tangential velocity
+        if direc >= 0:
+            ht = np.arctan2(rdir[0], -rdir[1])
+        else:
+            ht = np.arctan2(-rdir[0], rdir[1])
+        h0 = self.angle_diff(x[2], ht)
+        R_h0 = np.array([[np.cos(h0), -np.sin(h0)], [np.sin(h0), np.cos(h0)]])
+        vtmag = abs(R_h0.dot(self.speed_factor*params.velmax_pos[:2])[0])
+
+        # Simulate spiral move
+        alim = abs(2*np.pi*N)
+        while abs(a) < alim and not rospy.is_shutdown():
+
+            # Rotation for this instant
+            w = direc*vtmag/np.clip(rmag, 1E-6, rmag)
+            da = w*self.dt
+            R = np.array([[np.cos(da), -np.sin(da)], [np.sin(da), np.cos(da)]])
+
+            # Update
+            t += self.dt; a += da
+            rdir = R.dot(rdir)
+            rmag += mpr*da
+
+            # Record
+            x[:2] = c + rmag*rdir
+            x[2] = x[2] + da
+            x[3:5] = R_h0.T.dot([vtmag, mpr*w])
+            x[5] = w
+            if self.is_feasible(x, np.zeros(3)):
+                x_seq.append(np.copy(x))
+            else:
+                return x_seq, t, False
+
+        return x_seq, t, True
 
 
     def erf(self, xgoal, x):
