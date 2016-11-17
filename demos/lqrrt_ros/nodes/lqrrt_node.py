@@ -113,7 +113,7 @@ class LQRRT_Node(object):
         self.goal_bias = None
         self.sample_space = None
         self.guide = None
-        self.speed_factor = 1
+        self.speed_factor = np.array(1)
 
         # Planning control
         self.last_update_time = None
@@ -213,12 +213,21 @@ class LQRRT_Node(object):
             self.initial_plan_time = msg.initial_plan_time
 
         # Apply the speed factor, if specified
-        if msg.speed_factor > 0 and msg.speed_factor != 1:
-            self.speed_factor = msg.speed_factor
-            print("Speed_factor: {}".format(self.speed_factor))
-            if self.speed_factor < 1 and self.dt > 0.05:
-                self.dt *= self.speed_factor
-                print("(using smaller timestep: {} s)".format(self.dt))
+        msg.speed_factor = np.array(msg.speed_factor).flatten()
+        if len(msg.speed_factor) == 0:
+            pass
+        elif len(msg.speed_factor) not in [1, 3]:
+            print("(WARNING: expected speed_factor to be a scalar or in the form [x, y, h])")
+        else:
+            for i, sf in enumerate(msg.speed_factor):
+                if np.isclose(sf, 0) or sf < 0:
+                    msg.speed_factor[i] = 1
+            if not np.all(msg.speed_factor == 1):
+                self.speed_factor = np.copy(msg.speed_factor)
+                print("Speed_factor: {}".format(self.speed_factor))
+                if np.any(self.speed_factor < 1) and self.dt > 0.05:
+                    self.dt *= np.min(self.speed_factor)
+                    print("(using smaller timestep: {} s)".format(self.dt))
         for behavior in self.behaviors_list:
             behavior.planner.dt = self.dt
             behavior.velmax_pos = self.speed_factor * params.velmax_pos
@@ -232,7 +241,6 @@ class LQRRT_Node(object):
             self.last_update_time = self.rostime()
             remain = np.copy(self.goal)
             self.get_ref = lambda t: remain
-            self.get_eff = lambda t: np.zeros(3)
             print("\nDone!\n")
             self.move_server.set_succeeded(MoveResult(self.failure_reason))
             self.done = True
