@@ -216,9 +216,11 @@ class LQRRT_Node(object):
         if msg.speed_factor > 0 and msg.speed_factor != 1:
             self.speed_factor = msg.speed_factor
             print("Speed_factor: {}".format(self.speed_factor))
-            if self.speed_factor > 1:
-                print("(WARNING: amplified speeds can be glitchy)")
+            if self.speed_factor < 1 and self.dt > 0.05:
+                self.dt *= self.speed_factor
+                print("(using smaller timestep: {} s)".format(self.dt))
         for behavior in self.behaviors_list:
+            behavior.planner.dt = self.dt
             behavior.velmax_pos = self.speed_factor * params.velmax_pos
             behavior.velmax_neg = self.speed_factor * params.velmax_neg
             behavior.D_pos = params.D_pos / self.speed_factor
@@ -775,8 +777,8 @@ class LQRRT_Node(object):
                 behavior.planner.kill_update()
             return
 
-        # Check that the next reeval_limit seconds in the current plan are still feasible
-        p_seq = np.copy(x_seq[iters_passed:min([len(x_seq), int(iters_passed+(params.reeval_limit/self.dt))])])
+        # Check that the next reeval_time seconds in the current plan are still feasible
+        p_seq = np.copy(x_seq[iters_passed:min([len(x_seq), int(iters_passed+(params.reeval_time/self.dt)), params.reeval_limit])])
         if len(p_seq):
             p_seq[:, 3:] = 0
             for i, (x, u) in enumerate(zip(p_seq, [np.zeros(3)]*len(p_seq))):
