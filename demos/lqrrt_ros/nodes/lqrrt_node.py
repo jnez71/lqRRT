@@ -161,7 +161,7 @@ class LQRRT_Node(object):
         self.set_goal(self.unpack_pose(msg.goal))
 
         # Check given move_type
-        if msg.move_type in ['hold', 'drive', 'skid', 'spiral']:
+        if msg.move_type in ['hold', 'drive', 'drive!', 'skid', 'spiral']:
             if msg.blind:
                 self.blind = True
                 print("Preparing: blind {}".format(msg.move_type))
@@ -276,14 +276,14 @@ class LQRRT_Node(object):
                 return False
 
         # Standard driving
-        elif self.move_type == 'drive':
+        elif self.move_type in ['drive', 'drive!']:
 
             # Find the heading that points to the goal
             p_err = self.goal[:2] - self.state[:2]
             h_goal = np.arctan2(p_err[1], p_err[0])
 
             # If we aren't within a cone of that heading and the goal is far away, construct rotation
-            if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol and npl.norm(p_err) > params.free_radius:
+            if abs(self.angle_diff(h_goal, self.state[2])) > params.pointshoot_tol and npl.norm(p_err) > params.free_radius and self.move_type != 'drive!':
                 x_seq_rot, T_rot, rot_success, u_seq_rot = self.rotation_move(self.state, h_goal, params.pointshoot_tol)
                 print("\nRotating towards goal (duration: {})".format(np.round(T_rot, 2)))
                 if not rot_success:
@@ -305,6 +305,8 @@ class LQRRT_Node(object):
             else:
                 self.next_runtime = params.basic_duration
                 self.next_seed = np.copy(self.state)
+                if self.move_type == 'drive!':
+                    self.move_type = 'drive'
 
         # Translate or look-at move
         elif self.move_type == 'skid':

@@ -1,6 +1,6 @@
 # Goal
 
-string move_type  # 'hold', 'drive', 'skid', 'spiral'
+string move_type  # 'hold', 'drive', 'drive!', 'skid', 'spiral'
 geometry_msgs/Pose goal
 geometry_msgs/Point focus
 float64 initial_plan_time
