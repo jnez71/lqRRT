@@ -1172,8 +1172,9 @@ class LQRRT_Node(object):
         self.ogrid_origin = np.array([msg.info.origin.position.x, msg.info.origin.position.y])
         self.ogrid_cpm = 1 / msg.info.resolution
         self.reevaluate_plan()
-        if abs(self.rostime() - start) > 1:
-            print("\n(WARNING: ogrid callback is taking longer than 1 second)\n")
+        elapsed = abs(self.rostime() - start)
+        if elapsed > 1:
+            print("\n(WARNING: ogrid callback is taking {} seconds)\n".format(np.round(elapsed, 2)))
 
 
     def odom_cb(self, msg):
