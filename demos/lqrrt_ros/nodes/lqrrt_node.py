@@ -926,7 +926,7 @@ class LQRRT_Node(object):
             mpr *= -1
         x = np.array(x, dtype=np.float64)
         c = np.array(c, dtype=np.float64)
-        t = 0; a = 0
+        vt = 0; ang = 0; t = 0
         x_seq = []
 
         # Radial vector
@@ -934,33 +934,38 @@ class LQRRT_Node(object):
         rmag = npl.norm(r)
         rdir = r / np.clip(rmag, 1E-6, rmag)
 
-        # Tangential velocity
+        # Tangential velocity and acceleration
         if direc >= 0:
             ht = np.arctan2(rdir[0], -rdir[1])
         else:
             ht = np.arctan2(-rdir[0], rdir[1])
         h0 = self.angle_diff(x[2], ht)
         R_h0 = np.array([[np.cos(h0), -np.sin(h0)], [np.sin(h0), np.cos(h0)]])
-        vtmag = abs(R_h0.dot(self.speed_factor*params.velmax_pos[:2])[0])
+        vtmax = abs(R_h0.dot(self.speed_factor*params.velmax_pos[:2])[0])
+        atmax = abs(R_h0.dot([params.Fx_max, params.Fy_max])[0] / params.m)
+        magic_ratio = 0.5 / 5
 
         # Simulate spiral move
-        alim = abs(2*np.pi*N)
-        while abs(a) < alim and not rospy.is_shutdown():
+        anglim = abs(2*np.pi*N)
+        while abs(ang) < anglim and not rospy.is_shutdown():
 
             # Rotation for this instant
-            w = direc*vtmag/np.clip(rmag, 1E-6, rmag)
-            da = w*self.dt
-            R = np.array([[np.cos(da), -np.sin(da)], [np.sin(da), np.cos(da)]])
+            radfactor = np.clip(magic_ratio*rmag, 0, 1)
+            vt = np.clip(vt + radfactor*atmax*self.dt, 0, radfactor*vtmax)
+            w = direc*vt/np.clip(rmag, 1E-6, rmag)
+            dang = w*self.dt
+            R = np.array([[np.cos(dang), -np.sin(dang)], [np.sin(dang), np.cos(dang)]])
 
             # Update
-            t += self.dt; a += da
+            t += self.dt
+            ang += dang
             rdir = R.dot(rdir)
-            rmag += mpr*da
+            rmag += mpr*dang
 
             # Record
             x[:2] = c + rmag*rdir
-            x[2] = x[2] + da
-            x[3:5] = R_h0.T.dot([vtmag, mpr*w])
+            x[2] = x[2] + dang
+            x[3:5] = R_h0.T.dot([vt, mpr*w])
             x[5] = w
             if self.is_feasible(x, np.zeros(3)):
                 x_seq.append(np.copy(x))
