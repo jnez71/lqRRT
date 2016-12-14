@@ -1173,7 +1173,10 @@ class LQRRT_Node(object):
         self.ogrid = np.array(msg.data).reshape((msg.info.height, msg.info.width))
         self.ogrid_origin = np.array([msg.info.origin.position.x, msg.info.origin.position.y])
         self.ogrid_cpm = 1 / msg.info.resolution
-        self.reevaluate_plan()
+        try:
+            self.reevaluate_plan()
+        except:
+            print("\n(WARNING: something went wrong in reevaluate_plan)\n")
         elapsed = abs(self.rostime() - start)
         if elapsed > 1:
             print("\n(WARNING: ogrid callback is taking {} seconds)\n".format(np.round(elapsed, 2)))
