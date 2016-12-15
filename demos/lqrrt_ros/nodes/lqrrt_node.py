@@ -161,7 +161,7 @@ class LQRRT_Node(object):
         self.set_goal(self.unpack_pose(msg.goal))
 
         # Check given move_type
-        if msg.move_type in ['hold', 'drive', 'drive!', 'skid', 'spiral']:
+        if msg.move_type in ['hold', 'drive', 'drive!', 'skid', 'spiral', 'bypass']:
             if msg.blind:
                 self.blind = True
                 print("Preparing: blind {}".format(msg.move_type))
@@ -173,6 +173,33 @@ class LQRRT_Node(object):
             self.move_server.set_aborted(MoveResult('move_type'))
             self.done = True
             return False
+
+        # Station keeping move
+        if self.move_type == 'hold':
+            self.set_goal(self.state)
+            self.last_update_time = self.rostime()
+            remain = np.copy(self.goal)
+            self.get_ref = lambda t: remain
+            print("\nDone!\n")
+            self.move_server.set_succeeded(MoveResult(self.failure_reason))
+            self.done = True
+            return True
+
+        # Bypass move
+        if self.move_type == 'bypass':
+            if self.is_feasible(self.goal, np.zeros(3)):
+                self.last_update_time = self.rostime()
+                remain = np.copy(self.goal)
+                self.get_ref = lambda t: remain
+                print("\nDone!\n")
+                self.move_server.set_succeeded(MoveResult(self.failure_reason))
+                self.done = True
+                return True
+            else:
+                print("\nGoal infeasible! Bypass move rejected.\n")
+                self.move_server.set_aborted(MoveResult('occupied'))
+                self.done = True
+                return False
 
         # Make sure we are not already in a collided state
         if not self.is_feasible(self.state, np.zeros(3)) and not self.blind:
@@ -235,19 +262,8 @@ class LQRRT_Node(object):
             behavior.D_pos = params.D_pos / self.speed_factor
             behavior.D_neg = params.D_neg / self.speed_factor
 
-        # Station keeping
-        if self.move_type == 'hold':
-            self.set_goal(self.state)
-            self.last_update_time = self.rostime()
-            remain = np.copy(self.goal)
-            self.get_ref = lambda t: remain
-            print("\nDone!\n")
-            self.move_server.set_succeeded(MoveResult(self.failure_reason))
-            self.done = True
-            return True
-
         # Spiraling
-        elif self.move_type == 'spiral':
+        if self.move_type == 'spiral':
             if np.isclose(npl.norm(boat.focus[:2] - self.state[:2]), 0):
                 print("\nCan't perform a spiral of zero initial radius! Sorry.")
                 print("\nTerminated.\n")
