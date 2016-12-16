@@ -187,7 +187,7 @@ class LQRRT_Node(object):
 
         # Bypass move
         if self.move_type == 'bypass':
-            if self.is_feasible(self.goal, np.zeros(3)):
+            if self.is_feasible(self.goal, np.zeros(3)) or self.blind:
                 self.last_update_time = self.rostime()
                 remain = np.copy(self.goal)
                 self.get_ref = lambda t: remain
