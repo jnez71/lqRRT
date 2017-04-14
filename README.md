@@ -10,3 +10,5 @@ Feel free to take the lqrrt.rviz file out of that folder and put it in your home
 
 Enjoy!  
 -Jason Nezvadovitz
+
+![alt tag](https://raw.githubusercontent.com/jnez71/lqRRT/master/hype.png)
