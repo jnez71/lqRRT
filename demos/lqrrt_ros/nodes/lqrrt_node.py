@@ -660,7 +660,7 @@ class LQRRT_Node(object):
                     ss_goal = self.intup(np.subtract(goal, [offset_x[0], offset_y[0]]))
                     ss_seed = self.intup(np.subtract(seed, [offset_x[0], offset_y[0]]))
                     test_flood = np.copy(ss_img)
-                    area, rect = cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
+                    cv2.floodFill(test_flood, np.zeros((test_flood.shape[0]+2, test_flood.shape[1]+2), np.uint8), ss_goal, 69)
                     if test_flood[ss_seed[1], ss_seed[0]] == 69:
                         gs[:2] = (np.add([col, row], [last_offsets[0], last_offsets[1]]).astype(np.float64) / self.ogrid_cpm) + self.ogrid_origin
                         found_entry = True
@@ -1032,14 +1032,14 @@ class LQRRT_Node(object):
 
         # If goal can flood to seed then done
         flood_goal = np.copy(img)
-        area, rect = cv2.floodFill(flood_goal, np.zeros((flood_goal.shape[0]+2, flood_goal.shape[1]+2), np.uint8), goal, fc1)
+        cv2.floodFill(flood_goal, np.zeros((flood_goal.shape[0]+2, flood_goal.shape[1]+2), np.uint8), goal, fc1)
         if flood_goal[seed[1], seed[0]] == fc1:
             return 'connected'
         
         # Filter out the dividing boundary
         flood_goal_thresh = fc1*np.equal(flood_goal, fc1).astype(np.uint8)
         flood_seed = np.copy(flood_goal_thresh)
-        area, rect = cv2.floodFill(flood_seed, np.zeros((flood_seed.shape[0]+2, flood_seed.shape[1]+2), np.uint8), seed, fc2)
+        cv2.floodFill(flood_seed, np.zeros((flood_seed.shape[0]+2, flood_seed.shape[1]+2), np.uint8), seed, fc2)
         flood_seed_thresh = fc2*np.equal(flood_seed, fc2).astype(np.uint8)
 
         # Buffered boundaries and dimensions
