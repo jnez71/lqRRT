@@ -774,7 +774,7 @@ class LQRRT_Node(object):
                 print("...looks like I am already nearby.")
                 self.set_goal(self.state)
                 return
-            npoints = p_err_mag / (params.boat_length/2)
+            npoints = int(p_err_mag / (params.boat_length/2))
             xline = np.linspace(self.goal[0], self.state[0], npoints)
             yline = np.linspace(self.goal[1], self.state[1], npoints)
             hline = [np.arctan2(p_err[1], p_err[0])] * npoints
@@ -833,7 +833,7 @@ class LQRRT_Node(object):
             start = self.get_ref(self.rostime() - last_update_time)
             p_err = self.goal[:2] - start[:2]
             if npl.norm(p_err) > params.free_radius:
-                npoints = npl.norm(p_err) / params.vps_spacing
+                npoints = int(npl.norm(p_err) / params.vps_spacing)
                 xline = np.linspace(start[0], self.goal[0], npoints)
                 yline = np.linspace(start[1], self.goal[1], npoints)
                 hline = [np.arctan2(p_err[1], p_err[0])] * npoints
